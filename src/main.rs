@@ -374,6 +374,15 @@ impl<'a> DnsResolver<'a> {
 
                 result.push(ResourceRecord::SRV(domain, priority, weight, port, srv, ttl));
             }
+            else if qtype == querytype_number(&QueryType::MX) {
+                let newpos = self.pos + data_len as usize;
+                let priority = self.read_u16();
+                let mut mx = String::new();
+                self.read_qname(&mut mx, false);
+                self.pos = newpos;
+
+                result.push(ResourceRecord::MX(domain, priority, mx, ttl));
+            }
             else {
                 self.pos += data_len as usize;
 
@@ -451,6 +460,16 @@ impl Authority {
             entries: entries_vector
         }
     }
+
+    fn get_name_servers(&self) -> Vec<String> {
+        let mut nameservers = Vec::new();
+        for entry in &self.entries {
+            if let &ResourceRecord::NS(_, ref host, _) = entry {
+                nameservers.push(host.clone());
+            }
+        }
+        nameservers
+    }
 }
 
 fn main() {
@@ -475,40 +494,57 @@ fn main() {
 
     if let Some(arg1) = env::args().nth(1) {
 
-        /*let arg_split: Vec<&str> = arg1.split(".").collect();
-        println!("{:?}", arg_split);
+        let part_count = arg1.split(".").count();
+        let mut parts = Vec::new();
+        for i in 1..part_count+1 {
+            let part = arg1.splitn(i, ".").last().unwrap();
+            parts.push(part);
+        }
+        parts.push("");
 
-        for i in 0..arg_split.len() {
-            let arg_split2: Vec<&str> = arg1.splitn(arg_split.len()-i, ".").collect();
-            println!("{:?}", arg_split2[arg_split2.len()-1]);
-        }*/
-
-        let mut resolver = DnsResolver::new("8.8.8.8");
-        if let Ok(result) = resolver.send_query(&arg1) {
-            println!("query domain: {0}", result.domain);
-
-            println!("answers:");
-            for x in result.answers {
-                println!("\t{:?}", x);
-            }
-
-            println!("authorities:");
-            for x in result.authorities {
-                println!("\t{:?}", x);
-                if let ResourceRecord::NS(suffix, host, _) = x {
-                    if let Some(entry) = cache.get_mut(&suffix) {
-                        entry.entries.push(ResourceRecord::NS(suffix.clone(),
-                                                              host,
-                                                              3600));
+        loop {
+            let mut server: Option<String> = None;
+            for suffix in &parts {
+                println!("{:?}", suffix);
+                if let Some(entry) = cache.get_mut(&suffix.to_string()) {
+                    println!("entry found");
+                    let nameservers = entry.get_name_servers();
+                    for ns in nameservers {
+                        server = Some(ns.clone());
+                        println!("\t{}", ns);
                     }
                 }
             }
 
-            println!("resources:");
-            for x in result.resources {
-                println!("\t{:?}", x);
-            }
+            if let Some(server_host) = server {
+                let mut resolver = DnsResolver::new(&server_host);
+                if let Ok(result) = resolver.send_query(&arg1) {
+                    println!("query domain: {0}", result.domain);
 
+                    println!("answers:");
+                    for x in result.answers {
+                        println!("\t{:?}", x);
+                    }
+
+                    println!("authorities:");
+                    for x in result.authorities {
+                        println!("\t{:?}", x);
+                        if let ResourceRecord::NS(suffix, host, _) = x {
+                            if let Some(entry) = cache.get_mut(&suffix) {
+                                entry.entries.push(ResourceRecord::NS(suffix.clone(),
+                                                                      host,
+                                                                      3600));
+                            }
+                        }
+                    }
+
+                    println!("resources:");
+                    for x in result.resources {
+                        println!("\t{:?}", x);
+                    }
+
+                }
+            }
         }
     }
     else {
