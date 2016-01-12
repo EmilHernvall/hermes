@@ -4,16 +4,17 @@ use std::io::Result;
 //use std::io::stdout;
 use std::net::UdpSocket;
 use std::fmt;
+use std::env;
 
 #[derive(Debug)]
 #[allow(dead_code)]
 enum RecordType {
-    A,
-    NS,
-    CNAME,
-    SOA,
-    PTR,
-    MX
+    A, // 1
+    NS, // 2
+    CNAME, // 5
+    SOA, // 6
+    PTR, // 12
+    MX // 15
 }
 
 #[derive(Debug)]
@@ -60,7 +61,7 @@ impl DnsHeader {
                     resource_entries: 0 }
     }
 
-    fn to_binary<T : Write>(&self, writer: &mut BufWriter<T>) -> Result<()> {
+    fn write<T : Write>(&self, writer: &mut BufWriter<T>) -> Result<()> {
         try!(writer.write(&[ (self.id >> 8) as u8,
                              (self.id & 0xFF) as u8 ]));
 
@@ -88,7 +89,7 @@ impl DnsHeader {
         Ok(())
     }
 
-    fn set_from_response(&mut self, res: &[u8]) -> Result<()> {
+    fn read(&mut self, res: &[u8]) -> Result<usize> {
         self.id = ((res[1] as u16) & 0xFF) | ((res[0] as u16) << 8);
 
         self.recursion_desired = (res[2] & (1 << 0)) > 0;
@@ -108,7 +109,8 @@ impl DnsHeader {
         self.authorative_entries = ((res[9] as u16) & 0xFF) | ((res[8] as u16) << 8);
         self.resource_entries = ((res[11] as u16) & 0xFF) | ((res[10] as u16) << 8);
 
-        Ok(())
+        // Return the constant header size
+        Ok(12)
     }
 }
 
@@ -150,7 +152,7 @@ impl DnsQuestion {
                       qtype: qtype }
     }
 
-    fn to_binary<T : Write>(&self, writer: &mut BufWriter<T>) -> Result<()> {
+    fn write<T : Write>(&self, writer: &mut BufWriter<T>) -> Result<()> {
 
         for realstr in self.name.split(".").map(|x| x.to_string()) {
             try!(writer.write(&[ realstr.len() as u8 ]));
@@ -182,89 +184,182 @@ impl fmt::Display for DnsQuestion {
     }
 }
 
-fn build_query(data: &mut Vec<u8>) -> Result<()> {
-    let mut writer = BufWriter::new(data);
-
-    let head = DnsHeader::new();
-    println!("{}", head);
-
-    try!(head.to_binary(&mut writer));
-
-    let question = DnsQuestion::new(&"en.wikipedia.org".to_string(), RecordType::A);
-    println!("{}", question);
-
-    try!(question.to_binary(&mut writer));
-
-    Ok(())
+struct DnsResolver<'a> {
+    server: &'a str,
+    buf: [u8; 512],
+    pos: usize
 }
 
-fn send_query() -> Result<()> {
-    let mut data = Vec::new();
-
-    try!(build_query(&mut data));
-
-    println!("sending data of length {0}", data.len());
-    let socket = try!(UdpSocket::bind("0.0.0.0:34254"));
-    try!(socket.send_to(&data, ("8.8.8.8", 53)));
-
-    println!("receiving data");
-    let mut buf = [0; 512];
-    let _ = try!(socket.recv_from(&mut buf));
-    println!("got data\n");
-
-    drop(socket);
-
-    let mut response = DnsHeader::new();
-    try!(response.set_from_response(&buf));
-
-    println!("{}", response);
-
-    let mut pos = 12;
-    let mut domain = String::new();
-    let mut delim = "";
-    loop {
-        let len = buf[pos] as u8;
-        pos += 1;
-
-        if len == 0 {
-            break;
+impl<'a> DnsResolver<'a> {
+    fn new(server: &'a str) -> DnsResolver {
+        DnsResolver {
+            server: server,
+            buf: [0; 512],
+            pos: 0
         }
-
-        let part = String::from_utf8_lossy(&buf[pos..pos+len as usize]);
-        pos += len as usize;
-
-        domain.push_str(delim);
-        domain.push_str(&part);
-
-        delim = ".";
     }
 
-    println!("domain: {0}", domain);
+    fn read_u16(&mut self) -> u16
+    {
+        let res = ((self.buf[self.pos] as u16) << 8) | (self.buf[self.pos+1] as u16);
+        self.pos += 2;
+        res
+    }
 
-    pos += 6;
 
-    let qtype = ((buf[pos] as u16) << 8) | (buf[pos+1] as u16);
-    println!("qtype: {0}", qtype);
-    pos += 2;
+    fn read_u32(&mut self) -> u32
+    {
+        let res = ((self.buf[self.pos+3] as u32) << 0) |
+                  ((self.buf[self.pos+2] as u32) << 8) |
+                  ((self.buf[self.pos+1] as u32) << 16) |
+                  ((self.buf[self.pos+0] as u32) << 24);
+        self.pos += 4;
+        res
+    }
 
-    let class = ((buf[pos] as u16) << 8) | (buf[pos+1] as u16);
-    println!("class: {0}", class);
-    pos += 2;
+    fn read_qname(&mut self, outstr: &mut String, nomove: bool)
+    {
+        let mut pos = self.pos;
+        let mut jumped = false;
 
-    /*let ttl = ((buf[pos+3] as u32) << 0) |
-              ((buf[pos+2] as u32) << 8) |
-              ((buf[pos+1] as u32) << 16) |
-              ((buf[pos+0] as u32) << 24);
-    println!("ttl: {0}", ttl);
-    pos += 4;
+        let mut delim = "";
+        loop {
+            let len = self.buf[pos] as u8;
 
-    let data_len = ((buf[pos] as u16) << 8) | (buf[pos+1] as u16);
-    println!("data_len: {0}", data_len);
-    pos += 2;*/
+            // A two byte sequence, where the two highest bits of the first byte is
+            // set, represents a offset relative to the start of the buffer. We
+            // handle this by jumping to the offset, setting a flag to indicate
+            // that we only need to update the global position by two bytes.
+            if (len & 0xC0) > 0 {
+                let offset = (((len as u16) ^ 0xC0) << 8) | (self.buf[pos+1] as u16);
+                println!("offset: {0}", offset);
+                pos = offset as usize;
+                jumped = true;
+                continue;
+            }
 
-    Ok(())
+            pos += 1;
+
+            if len == 0 {
+                break;
+            }
+
+            outstr.push_str(delim);
+            outstr.push_str(&String::from_utf8_lossy(&self.buf[pos..pos+len as usize]));
+            delim = ".";
+
+            pos += len as usize;
+        }
+
+        if nomove {
+            return;
+        }
+
+        if jumped {
+            self.pos += 2;
+        } else {
+            self.pos = pos;
+        }
+    }
+
+    fn build_query(&self, domain: &String, data: &mut Vec<u8>) -> Result<()> {
+        let mut writer = BufWriter::new(data);
+
+        let head = DnsHeader::new();
+        println!("{}", head);
+
+        try!(head.write(&mut writer));
+
+        let question = DnsQuestion::new(domain, RecordType::A);
+        println!("{}", question);
+
+        try!(question.write(&mut writer));
+
+        Ok(())
+    }
+
+    fn send_query(&mut self, qname: &String) -> Result<()> {
+
+        // Prepare request
+        let mut data = Vec::new();
+        try!(self.build_query(qname, &mut data));
+
+        // Set up socket and send data
+        println!("sending data of length {0}", data.len());
+        let socket = try!(UdpSocket::bind("0.0.0.0:34254"));
+        try!(socket.send_to(&data, (self.server, 53)));
+
+        // Retrieve response
+        println!("receiving data");
+        let _ = try!(socket.recv_from(&mut self.buf));
+        println!("got data\n");
+
+        drop(socket);
+
+        // Process response
+        let mut response = DnsHeader::new();
+        self.pos += try!(response.read(&self.buf));
+
+        println!("{}", response);
+
+        {
+            let mut domain = String::new();
+            self.read_qname(&mut domain, false);
+            let qtype = self.read_u16();
+            let class = self.read_u16();
+
+            println!("domain: {0}", domain);
+            println!("qtype: {0}", qtype);
+            println!("class: {0}", class);
+        }
+
+        println!("");
+
+        for _ in 0..response.answers {
+            let mut domain = String::new();
+            self.read_qname(&mut domain, false);
+
+            let qtype = self.read_u16();
+            let class = self.read_u16();
+            let ttl = self.read_u32();
+            let data_len = self.read_u16();
+
+            println!("domain: {0}", domain);
+            println!("qtype: {0}", qtype);
+            println!("class: {0}", class);
+            println!("ttl: {0}", ttl);
+            println!("data_len: {0}", data_len);
+
+            if qtype == 1 {
+                let addr = self.read_u32();
+                println!("ip: {0}.{1}.{2}.{3}",
+                         (addr >> 24) & 0xFF,
+                         (addr >> 16) & 0xFF,
+                         (addr >> 8) & 0xFF,
+                         (addr >> 0) & 0xFF);
+            }
+            else if qtype == 5 {
+                let mut alias = String::new();
+                self.read_qname(&mut alias, true);
+                self.pos += data_len as usize;
+            }
+            else {
+                self.pos += data_len as usize;
+            }
+
+            println!("");
+        }
+
+        Ok(())
+    }
 }
 
 fn main() {
-    let _ = send_query();
+    if let Some(arg1) = env::args().nth(1) {
+        let mut resolver = DnsResolver::new("8.8.8.8");
+        let _ = resolver.send_query(&arg1);
+    }
+    else {
+        println!("usage: ./resolve <domain>");
+    }
 }
