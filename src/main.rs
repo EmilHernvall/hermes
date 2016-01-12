@@ -3,18 +3,69 @@ use std::io::Write;
 use std::io::Result;
 //use std::io::stdout;
 use std::net::UdpSocket;
+use std::net::{Ipv4Addr,Ipv6Addr};
 use std::fmt;
 use std::env;
+use std::vec::Vec;
 
 #[derive(Debug)]
 #[allow(dead_code)]
-enum RecordType {
+enum QueryType {
+    UNKNOWN, // 0
     A, // 1
     NS, // 2
     CNAME, // 5
     SOA, // 6
     PTR, // 12
-    MX // 15
+    MX, // 15
+    TXT, // 16
+    AAAA, // 28
+    SRV // 33
+}
+
+fn querytype_number(qtype: &QueryType) -> u16 {
+    match *qtype {
+        QueryType::UNKNOWN => 0,
+        QueryType::A => 1,
+        QueryType::NS => 2,
+        QueryType::CNAME => 5,
+        QueryType::SOA => 6,
+        QueryType::PTR => 12,
+        QueryType::MX => 15,
+        QueryType::TXT => 16,
+        QueryType::AAAA => 28,
+        QueryType::SRV => 33,
+    }
+}
+
+/*fn querytype(num: u16) -> QueryType {
+    match num {
+        1 => QueryType::A,
+        2 => QueryType::NS,
+        5 => QueryType::CNAME,
+        6 => QueryType::SOA,
+        12 => QueryType::PTR,
+        15 => QueryType::MX,
+        16 => QueryType::TXT,
+        28 => QueryType::AAAA,
+        33 => QueryType::SRV,
+        _ => QueryType::UNKNOWN
+    }
+}*/
+
+#[derive(Debug)]
+#[allow(dead_code)]
+enum ResourceRecord {
+    UNKNOWN(String, u16, u32), // 0
+    A(String, Ipv4Addr, u32), // 1
+    NS(String, String, u32), // 2
+    CNAME(String, String, u32), // 5
+    SOA, // 6
+    PTR, // 12
+    MX(String, u16, String, u32), // 15
+    TXT, // 16
+    AAAA(String, Ipv6Addr, u32), // 28
+    SRV // 33
 }
 
 #[derive(Debug)]
@@ -41,7 +92,7 @@ struct DnsHeader {
 
 impl DnsHeader {
     fn new() -> DnsHeader {
-        DnsHeader { id: 777,
+        DnsHeader { id: 0,
 
                     recursion_desired: true,
                     truncated_message: false,
@@ -143,11 +194,11 @@ impl fmt::Display for DnsHeader {
 #[derive(Debug)]
 struct DnsQuestion {
     name: String,
-    qtype: RecordType
+    qtype: QueryType
 }
 
 impl DnsQuestion {
-    fn new(name: &String, qtype: RecordType) -> DnsQuestion {
+    fn new(name: &String, qtype: QueryType) -> DnsQuestion {
         DnsQuestion { name: name.to_string(),
                       qtype: qtype }
     }
@@ -160,14 +211,9 @@ impl DnsQuestion {
         }
         try!(writer.write(&[ 0 ]));
 
-        try!(writer.write(&[0, match self.qtype {
-            RecordType::A => 1,
-            RecordType::NS => 2,
-            RecordType::CNAME => 5,
-            RecordType::SOA => 6,
-            RecordType::PTR => 12,
-            RecordType::MX => 15,
-        }]));
+        let typenum = querytype_number(&self.qtype);
+        try!(writer.write(&[ (typenum >> 8) as u8,
+                             (typenum & 0xFF) as u8 ]));
         try!(writer.write(&[ 0, 1 ]));
 
         Ok(())
@@ -182,6 +228,13 @@ impl fmt::Display for DnsQuestion {
 
         Ok(())
     }
+}
+
+struct QueryResult {
+    domain: String,
+    answers: Vec<ResourceRecord>,
+    authorities: Vec<ResourceRecord>,
+    resources: Vec<ResourceRecord>
 }
 
 struct DnsResolver<'a> {
@@ -232,7 +285,6 @@ impl<'a> DnsResolver<'a> {
             // that we only need to update the global position by two bytes.
             if (len & 0xC0) > 0 {
                 let offset = (((len as u16) ^ 0xC0) << 8) | (self.buf[pos+1] as u16);
-                println!("offset: {0}", offset);
                 pos = offset as usize;
                 jumped = true;
                 continue;
@@ -262,37 +314,86 @@ impl<'a> DnsResolver<'a> {
         }
     }
 
+    fn read_records(&mut self, count: u16, result: &mut Vec<ResourceRecord>) {
+        for _ in 0..count {
+            let mut domain = String::new();
+            self.read_qname(&mut domain, false);
+
+            let qtype = self.read_u16();
+            let _ = self.read_u16();
+            let ttl = self.read_u32();
+            let data_len = self.read_u16();
+
+            if qtype == querytype_number(&QueryType::A) {
+                let raw_addr = self.read_u32();
+                let addr = Ipv4Addr::new(((raw_addr >> 24) & 0xFF) as u8,
+                                         ((raw_addr >> 16) & 0xFF) as u8,
+                                         ((raw_addr >> 8) & 0xFF) as u8,
+                                         ((raw_addr >> 0) & 0xFF) as u8);
+                result.push(ResourceRecord::A(domain, addr, ttl));
+            }
+            else if qtype == querytype_number(&QueryType::AAAA) {
+                let raw_addr1 = self.read_u32();
+                let raw_addr2 = self.read_u32();
+                let raw_addr3 = self.read_u32();
+                let raw_addr4 = self.read_u32();
+                let addr = Ipv6Addr::new(((raw_addr1 >> 16) & 0xFFFF) as u16,
+                                         ((raw_addr1 >> 0) & 0xFFFF) as u16,
+                                         ((raw_addr2 >> 16) & 0xFFFF) as u16,
+                                         ((raw_addr2 >> 0) & 0xFFFF) as u16,
+                                         ((raw_addr3 >> 16) & 0xFFFF) as u16,
+                                         ((raw_addr3 >> 0) & 0xFFFF) as u16,
+                                         ((raw_addr4 >> 16) & 0xFFFF) as u16,
+                                         ((raw_addr4 >> 0) & 0xFFFF) as u16);
+
+                result.push(ResourceRecord::AAAA(domain, addr, ttl));
+            }
+            else if qtype == querytype_number(&QueryType::NS) {
+                let mut ns = String::new();
+                self.read_qname(&mut ns, true);
+                self.pos += data_len as usize;
+
+                result.push(ResourceRecord::NS(domain, ns, ttl));
+            }
+            else if qtype == querytype_number(&QueryType::CNAME) {
+                let mut cname = String::new();
+                self.read_qname(&mut cname, true);
+                self.pos += data_len as usize;
+
+                result.push(ResourceRecord::CNAME(domain, cname, ttl));
+            }
+            else {
+                self.pos += data_len as usize;
+
+                result.push(ResourceRecord::UNKNOWN(domain, data_len, ttl));
+            }
+        }
+    }
+
     fn build_query(&self, domain: &String, data: &mut Vec<u8>) -> Result<()> {
         let mut writer = BufWriter::new(data);
 
         let head = DnsHeader::new();
-        println!("{}", head);
-
         try!(head.write(&mut writer));
 
-        let question = DnsQuestion::new(domain, RecordType::A);
-        println!("{}", question);
-
+        let question = DnsQuestion::new(domain, QueryType::A);
         try!(question.write(&mut writer));
 
         Ok(())
     }
 
-    fn send_query(&mut self, qname: &String) -> Result<()> {
+    fn send_query(&mut self, qname: &String) -> Result<QueryResult> {
 
         // Prepare request
         let mut data = Vec::new();
         try!(self.build_query(qname, &mut data));
 
         // Set up socket and send data
-        println!("sending data of length {0}", data.len());
         let socket = try!(UdpSocket::bind("0.0.0.0:34254"));
         try!(socket.send_to(&data, (self.server, 53)));
 
         // Retrieve response
-        println!("receiving data");
         let _ = try!(socket.recv_from(&mut self.buf));
-        println!("got data\n");
 
         drop(socket);
 
@@ -300,64 +401,47 @@ impl<'a> DnsResolver<'a> {
         let mut response = DnsHeader::new();
         self.pos += try!(response.read(&self.buf));
 
-        println!("{}", response);
+        //println!("{}", response);
 
-        {
-            let mut domain = String::new();
-            self.read_qname(&mut domain, false);
-            let qtype = self.read_u16();
-            let class = self.read_u16();
+        let mut domain = String::new();
+        self.read_qname(&mut domain, false);
+        let _ = self.read_u16(); // qtype
+        let _ = self.read_u16(); // class
 
-            println!("domain: {0}", domain);
-            println!("qtype: {0}", qtype);
-            println!("class: {0}", class);
-        }
+        let mut result = QueryResult { domain: domain,
+                                       answers: Vec::new(),
+                                       authorities: Vec::new(),
+                                       resources: Vec::new() };
 
-        println!("");
+        self.read_records(response.answers, &mut result.answers);
+        self.read_records(response.authorative_entries, &mut result.authorities);
+        self.read_records(response.resource_entries, &mut result.resources);
 
-        for _ in 0..response.answers {
-            let mut domain = String::new();
-            self.read_qname(&mut domain, false);
-
-            let qtype = self.read_u16();
-            let class = self.read_u16();
-            let ttl = self.read_u32();
-            let data_len = self.read_u16();
-
-            println!("domain: {0}", domain);
-            println!("qtype: {0}", qtype);
-            println!("class: {0}", class);
-            println!("ttl: {0}", ttl);
-            println!("data_len: {0}", data_len);
-
-            if qtype == 1 {
-                let addr = self.read_u32();
-                println!("ip: {0}.{1}.{2}.{3}",
-                         (addr >> 24) & 0xFF,
-                         (addr >> 16) & 0xFF,
-                         (addr >> 8) & 0xFF,
-                         (addr >> 0) & 0xFF);
-            }
-            else if qtype == 5 {
-                let mut alias = String::new();
-                self.read_qname(&mut alias, true);
-                self.pos += data_len as usize;
-            }
-            else {
-                self.pos += data_len as usize;
-            }
-
-            println!("");
-        }
-
-        Ok(())
+        Ok(result)
     }
 }
 
 fn main() {
     if let Some(arg1) = env::args().nth(1) {
-        let mut resolver = DnsResolver::new("8.8.8.8");
-        let _ = resolver.send_query(&arg1);
+        let mut resolver = DnsResolver::new("192.168.1.1");
+        if let Ok(result) = resolver.send_query(&arg1) {
+            println!("query domain: {0}", result.domain);
+
+            println!("answers:");
+            for x in result.answers {
+                println!("\t{:?}", x);
+            }
+
+            println!("authorities:");
+            for x in result.authorities {
+                println!("\t{:?}", x);
+            }
+
+            println!("resources:");
+            for x in result.resources {
+                println!("\t{:?}", x);
+            }
+        }
     }
     else {
         println!("usage: ./resolve <domain>");
