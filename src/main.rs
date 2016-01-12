@@ -7,6 +7,7 @@ use std::net::{Ipv4Addr,Ipv6Addr};
 use std::fmt;
 use std::env;
 use std::vec::Vec;
+use std::collections::HashMap;
 
 #[derive(Debug)]
 #[allow(dead_code)]
@@ -56,7 +57,7 @@ fn querytype_number(qtype: &QueryType) -> u16 {
 #[derive(Debug)]
 #[allow(dead_code)]
 enum ResourceRecord {
-    UNKNOWN(String, u16, u32), // 0
+    UNKNOWN(String, u16, u16, u32), // 0
     A(String, Ipv4Addr, u32), // 1
     NS(String, String, u32), // 2
     CNAME(String, String, u32), // 5
@@ -65,7 +66,7 @@ enum ResourceRecord {
     MX(String, u16, String, u32), // 15
     TXT, // 16
     AAAA(String, Ipv6Addr, u32), // 28
-    SRV // 33
+    SRV(String, u16, u16, u16, String, u32) // 33
 }
 
 #[derive(Debug)]
@@ -362,10 +363,21 @@ impl<'a> DnsResolver<'a> {
 
                 result.push(ResourceRecord::CNAME(domain, cname, ttl));
             }
+            else if qtype == querytype_number(&QueryType::SRV) {
+                let priority = self.read_u16();
+                let weight = self.read_u16();
+                let port = self.read_u16();
+
+                let mut srv = String::new();
+                self.read_qname(&mut srv, true);
+                self.pos += data_len as usize;
+
+                result.push(ResourceRecord::SRV(domain, priority, weight, port, srv, ttl));
+            }
             else {
                 self.pos += data_len as usize;
 
-                result.push(ResourceRecord::UNKNOWN(domain, data_len, ttl));
+                result.push(ResourceRecord::UNKNOWN(domain, qtype, data_len, ttl));
             }
         }
     }
@@ -421,9 +433,57 @@ impl<'a> DnsResolver<'a> {
     }
 }
 
+struct Authority {
+    suffix: String,
+    entries: Vec<ResourceRecord>
+}
+
+impl Authority {
+    fn new(suffix: String, entries: Vec<&str>) -> Authority {
+        let mut entries_vector = Vec::new();
+
+        for s in entries {
+            entries_vector.push(ResourceRecord::NS(suffix.clone(), s.to_string(), 3600));
+        }
+
+        Authority {
+            suffix: suffix,
+            entries: entries_vector
+        }
+    }
+}
+
 fn main() {
+
+    let mut cache = HashMap::new();
+
+    let rootservers = vec![ "198.41.0.4",
+                            "192.228.79.201",
+                            "192.33.4.12",
+                            "199.7.91.13",
+                            "192.203.230.10",
+                            "192.5.5.241",
+                            "192.112.36.4",
+                            "198.97.190.53",
+                            "192.36.148.17",
+                            "192.58.128.30",
+                            "193.0.14.129",
+                            "199.7.83.42",
+                            "202.12.27.33" ];
+
+    cache.insert("".to_string(), Authority::new("".to_string(), rootservers));
+
     if let Some(arg1) = env::args().nth(1) {
-        let mut resolver = DnsResolver::new("192.168.1.1");
+
+        /*let arg_split: Vec<&str> = arg1.split(".").collect();
+        println!("{:?}", arg_split);
+
+        for i in 0..arg_split.len() {
+            let arg_split2: Vec<&str> = arg1.splitn(arg_split.len()-i, ".").collect();
+            println!("{:?}", arg_split2[arg_split2.len()-1]);
+        }*/
+
+        let mut resolver = DnsResolver::new("8.8.8.8");
         if let Ok(result) = resolver.send_query(&arg1) {
             println!("query domain: {0}", result.domain);
 
@@ -435,12 +495,20 @@ fn main() {
             println!("authorities:");
             for x in result.authorities {
                 println!("\t{:?}", x);
+                if let ResourceRecord::NS(suffix, host, _) = x {
+                    if let Some(entry) = cache.get_mut(&suffix) {
+                        entry.entries.push(ResourceRecord::NS(suffix.clone(),
+                                                              host,
+                                                              3600));
+                    }
+                }
             }
 
             println!("resources:");
             for x in result.resources {
                 println!("\t{:?}", x);
             }
+
         }
     }
     else {
