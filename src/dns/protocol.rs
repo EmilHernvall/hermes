@@ -91,7 +91,7 @@ impl DnsHeader {
     pub fn new() -> DnsHeader {
         DnsHeader { id: 0,
 
-                    recursion_desired: true,
+                    recursion_desired: false,
                     truncated_message: false,
                     authorative_answer: false,
                     opcode: 0,
@@ -137,28 +137,31 @@ impl DnsHeader {
         Ok(())
     }
 
-    pub fn read(&mut self, res: &[u8]) -> Result<usize> {
-        self.id = ((res[1] as u16) & 0xFF) | ((res[0] as u16) << 8);
+    pub fn read(&mut self, protocol: &mut DnsProtocol) -> Result<()> {
+        self.id = protocol.read_u16();
 
-        self.recursion_desired = (res[2] & (1 << 0)) > 0;
-        self.truncated_message = (res[2] & (1 << 1)) > 0;
-        self.authorative_answer = (res[2] & (1 << 2)) > 0;
-        self.opcode = (res[2] >> 3) & 0x0F;
-        self.response = (res[2] & (1 << 7)) > 0;
+        let flags = protocol.read_u16();
+        let a = (flags >> 8) as u8;
+        let b = (flags & 0xFF) as u8;
+        self.recursion_desired = (a & (1 << 0)) > 0;
+        self.truncated_message = (a & (1 << 1)) > 0;
+        self.authorative_answer = (a & (1 << 2)) > 0;
+        self.opcode = (a >> 3) & 0x0F;
+        self.response = (a & (1 << 7)) > 0;
 
-        self.rescode = res[3] & 0x0F;
-        self.checking_disabled = (res[3] & (1 << 4)) > 0;
-        self.authed_data = (res[3] & (1 << 5)) > 0;
-        self.z = (res[3] & (1 << 6)) > 0;
-        self.recursion_available = (res[3] & (1 << 7)) > 0;
+        self.rescode = b & 0x0F;
+        self.checking_disabled = (b & (1 << 4)) > 0;
+        self.authed_data = (b & (1 << 5)) > 0;
+        self.z = (b & (1 << 6)) > 0;
+        self.recursion_available = (b & (1 << 7)) > 0;
 
-        self.questions = ((res[5] as u16) & 0xFF) | ((res[4] as u16) << 8);
-        self.answers = ((res[7] as u16) & 0xFF) | ((res[6] as u16) << 8);
-        self.authorative_entries = ((res[9] as u16) & 0xFF) | ((res[8] as u16) << 8);
-        self.resource_entries = ((res[11] as u16) & 0xFF) | ((res[10] as u16) << 8);
+        self.questions = protocol.read_u16();
+        self.answers = protocol.read_u16();
+        self.authorative_entries = protocol.read_u16();
+        self.resource_entries = protocol.read_u16();
 
         // Return the constant header size
-        Ok(12)
+        Ok(())
     }
 }
 
@@ -212,6 +215,14 @@ impl DnsQuestion {
         try!(writer.write(&[ (typenum >> 8) as u8,
                              (typenum & 0xFF) as u8 ]));
         try!(writer.write(&[ 0, 1 ]));
+
+        Ok(())
+    }
+
+    pub fn read(&mut self, protocol: &mut DnsProtocol) -> Result<()> {
+        protocol.read_qname(&mut self.name, false);
+        self.qtype = querytype(protocol.read_u16()); // qtype
+        let _ = protocol.read_u16(); // class
 
         Ok(())
     }

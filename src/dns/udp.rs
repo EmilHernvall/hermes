@@ -55,24 +55,20 @@ impl<'a> DnsUdpClient<'a> {
         drop(socket);
 
         // Process response
-        let mut response = DnsHeader::new();
-        self.protocol.pos += try!(response.read(&self.protocol.buf));
+        let mut header = DnsHeader::new();
+        try!(header.read(&mut self.protocol));
 
-        //println!("{}", response);
+        let mut question = DnsQuestion::new(&"".to_string(), QueryType::UNKNOWN);
+        try!(question.read(&mut self.protocol));
 
-        let mut domain = String::new();
-        self.protocol.read_qname(&mut domain, false);
-        let _ = self.protocol.read_u16(); // qtype
-        let _ = self.protocol.read_u16(); // class
-
-        let mut result = QueryResult { domain: domain,
+        let mut result = QueryResult { domain: question.name,
                                        answers: Vec::new(),
                                        authorities: Vec::new(),
                                        resources: Vec::new() };
 
-        self.protocol.read_records(response.answers, &mut result.answers);
-        self.protocol.read_records(response.authorative_entries, &mut result.authorities);
-        self.protocol.read_records(response.resource_entries, &mut result.resources);
+        self.protocol.read_records(header.answers, &mut result.answers);
+        self.protocol.read_records(header.authorative_entries, &mut result.authorities);
+        self.protocol.read_records(header.resource_entries, &mut result.resources);
 
         Ok(result)
     }

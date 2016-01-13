@@ -43,13 +43,13 @@ fn run_server() -> Result<()> {
         let mut reqbuf = [0; 512];
         let (amt, src) = try!(socket.recv_from(&mut reqbuf));
 
-        let mut header = DnsHeader::new();
-        try!(header.read(&reqbuf));
-        println!("{}", header);
-
         let mut protocol = DnsProtocol::new();
         protocol.buf = reqbuf;
-        protocol.pos = 12;
+        protocol.pos = 0;
+
+        let mut header = DnsHeader::new();
+        try!(header.read(&mut protocol));
+        println!("{}", header);
 
         let mut qname = String::new();
         protocol.read_qname(&mut qname, false);
