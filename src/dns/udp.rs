@@ -158,23 +158,29 @@ impl<'a> DnsUdpProtocol<'a> {
         }
     }
 
-    fn build_query(&self, domain: &String, data: &mut Vec<u8>) -> Result<()> {
+    fn build_query(&self,
+                   qname: &String,
+                   qtype: QueryType,
+                   data: &mut Vec<u8>) -> Result<()> {
+
         let mut writer = BufWriter::new(data);
 
         let head = DnsHeader::new();
         try!(head.write(&mut writer));
 
-        let question = DnsQuestion::new(domain, QueryType::A);
+        let question = DnsQuestion::new(qname, qtype);
         try!(question.write(&mut writer));
 
         Ok(())
     }
 
-    pub fn send_query(&mut self, qname: &String) -> Result<QueryResult> {
+    pub fn send_query(&mut self,
+                      qname: &String,
+                      qtype: QueryType) -> Result<QueryResult> {
 
         // Prepare request
         let mut data = Vec::new();
-        try!(self.build_query(qname, &mut data));
+        try!(self.build_query(qname, qtype, &mut data));
 
         // Set up socket and send data
         let socket = try!(UdpSocket::bind("0.0.0.0:34254"));
