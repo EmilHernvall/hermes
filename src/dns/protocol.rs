@@ -233,3 +233,161 @@ pub struct QueryResult {
     pub authorities: Vec<ResourceRecord>,
     pub resources: Vec<ResourceRecord>
 }
+
+pub struct DnsProtocol {
+    pub buf: [u8; 512],
+    pub pos: usize
+}
+
+impl DnsProtocol {
+    pub fn new() -> DnsProtocol {
+        DnsProtocol {
+            buf: [0; 512],
+            pos: 0
+        }
+    }
+
+    pub fn read_u16(&mut self) -> u16
+    {
+        let res = ((self.buf[self.pos] as u16) << 8) |
+                  (self.buf[self.pos+1] as u16);
+        self.pos += 2;
+        res
+    }
+
+    pub fn read_u32(&mut self) -> u32
+    {
+        let res = ((self.buf[self.pos+3] as u32) << 0) |
+                  ((self.buf[self.pos+2] as u32) << 8) |
+                  ((self.buf[self.pos+1] as u32) << 16) |
+                  ((self.buf[self.pos+0] as u32) << 24);
+        self.pos += 4;
+        res
+    }
+
+    pub fn read_qname(&mut self, outstr: &mut String, nomove: bool)
+    {
+        let mut pos = self.pos;
+        let mut jumped = false;
+
+        let mut delim = "";
+        loop {
+            let len = self.buf[pos] as u8;
+
+            // A two byte sequence, where the two highest bits of the first byte is
+            // set, represents a offset relative to the start of the buffer. We
+            // handle this by jumping to the offset, setting a flag to indicate
+            // that we only need to update the global position by two bytes.
+            if (len & 0xC0) > 0 {
+                let offset = (((len as u16) ^ 0xC0) << 8) |
+                             (self.buf[pos+1] as u16);
+                pos = offset as usize;
+                jumped = true;
+                continue;
+            }
+
+            pos += 1;
+
+            if len == 0 {
+                break;
+            }
+
+            outstr.push_str(delim);
+            outstr.push_str(&String::from_utf8_lossy(&self.buf[pos..pos+len as usize]));
+            delim = ".";
+
+            pos += len as usize;
+        }
+
+        if nomove {
+            return;
+        }
+
+        if jumped {
+            self.pos += 2;
+        } else {
+            self.pos = pos;
+        }
+    }
+
+    pub fn read_records(&mut self, count: u16, result: &mut Vec<ResourceRecord>) {
+        for _ in 0..count {
+            let mut domain = String::new();
+            self.read_qname(&mut domain, false);
+
+            let qtype = self.read_u16();
+            let _ = self.read_u16();
+            let ttl = self.read_u32();
+            let data_len = self.read_u16();
+
+            if qtype == querytype_number(&QueryType::A) {
+                let raw_addr = self.read_u32();
+                let addr = Ipv4Addr::new(((raw_addr >> 24) & 0xFF) as u8,
+                                         ((raw_addr >> 16) & 0xFF) as u8,
+                                         ((raw_addr >> 8) & 0xFF) as u8,
+                                         ((raw_addr >> 0) & 0xFF) as u8);
+                result.push(ResourceRecord::A(domain, addr, ttl));
+            }
+            else if qtype == querytype_number(&QueryType::AAAA) {
+                let raw_addr1 = self.read_u32();
+                let raw_addr2 = self.read_u32();
+                let raw_addr3 = self.read_u32();
+                let raw_addr4 = self.read_u32();
+                let addr = Ipv6Addr::new(((raw_addr1 >> 16) & 0xFFFF) as u16,
+                                         ((raw_addr1 >> 0) & 0xFFFF) as u16,
+                                         ((raw_addr2 >> 16) & 0xFFFF) as u16,
+                                         ((raw_addr2 >> 0) & 0xFFFF) as u16,
+                                         ((raw_addr3 >> 16) & 0xFFFF) as u16,
+                                         ((raw_addr3 >> 0) & 0xFFFF) as u16,
+                                         ((raw_addr4 >> 16) & 0xFFFF) as u16,
+                                         ((raw_addr4 >> 0) & 0xFFFF) as u16);
+
+                result.push(ResourceRecord::AAAA(domain, addr, ttl));
+            }
+            else if qtype == querytype_number(&QueryType::NS) {
+                let mut ns = String::new();
+                self.read_qname(&mut ns, true);
+                self.pos += data_len as usize;
+
+                result.push(ResourceRecord::NS(domain, ns, ttl));
+            }
+            else if qtype == querytype_number(&QueryType::CNAME) {
+                let mut cname = String::new();
+                self.read_qname(&mut cname, true);
+                self.pos += data_len as usize;
+
+                result.push(ResourceRecord::CNAME(domain, cname, ttl));
+            }
+            else if qtype == querytype_number(&QueryType::SRV) {
+                let priority = self.read_u16();
+                let weight = self.read_u16();
+                let port = self.read_u16();
+
+                let mut srv = String::new();
+                self.read_qname(&mut srv, true);
+                self.pos += data_len as usize;
+
+                result.push(ResourceRecord::SRV(domain,
+                                                priority,
+                                                weight,
+                                                port,
+                                                srv,
+                                                ttl));
+            }
+            else if qtype == querytype_number(&QueryType::MX) {
+                let newpos = self.pos + data_len as usize;
+                let priority = self.read_u16();
+                let mut mx = String::new();
+                self.read_qname(&mut mx, false);
+                self.pos = newpos;
+
+                result.push(ResourceRecord::MX(domain, priority, mx, ttl));
+            }
+            else {
+                self.pos += data_len as usize;
+
+                result.push(ResourceRecord::UNKNOWN(domain, qtype, data_len, ttl));
+            }
+        }
+    }
+}
