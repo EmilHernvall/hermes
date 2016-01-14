@@ -20,28 +20,19 @@ impl<'a> DnsUdpClient<'a> {
         }
     }
 
-    fn build_query(&self,
-                   qname: &String,
-                   qtype: QueryType,
-                   req_packet: &mut DnsPacket) -> Result<()> {
-
-        let mut head = DnsHeader::new();
-        head.questions = 1;
-        try!(head.write(req_packet));
-
-        let question = DnsQuestion::new(qname, qtype);
-        try!(question.write(req_packet));
-
-        Ok(())
-    }
-
     pub fn send_query(&mut self,
                       qname: &String,
                       qtype: QueryType) -> Result<QueryResult> {
 
         // Prepare request
         let mut req_packet = DnsPacket::new();
-        try!(self.build_query(qname, qtype, &mut req_packet));
+
+        let mut head = DnsHeader::new();
+        head.questions = 1;
+        try!(head.write(&mut req_packet));
+
+        let question = DnsQuestion::new(qname, qtype);
+        try!(question.write(&mut req_packet));
 
         // Set up socket and send data
         let socket = try!(UdpSocket::bind("0.0.0.0:34254"));

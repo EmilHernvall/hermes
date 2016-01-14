@@ -138,14 +138,6 @@ impl ResourceRecord {
     pub fn write(&self,
                  packet: &mut DnsPacket) -> Result<()> {
 
-        //let mut domain = String::new();
-        //let _ = packet.read_qname(&mut domain, false);
-
-        //let qtype = querytype(try!(packet.read_u16()));
-        //let _ = try!(packet.read_u16());
-        //let ttl = try!(packet.read_u32());
-        //let data_len = try!(packet.read_u16());
-
         match *self {
             ResourceRecord::A(ref host, ref addr, ttl) => {
                 try!(packet.write_qname(host));
@@ -160,29 +152,10 @@ impl ResourceRecord {
                 try!(packet.write_u8(octets[2]));
                 try!(packet.write_u8(octets[3]));
             },
-            ResourceRecord::AAAA(ref host, ref addr, ttl) => {
-                //let raw_addr1 = try!(packet.read_u32());
-                //let raw_addr2 = try!(packet.read_u32());
-                //let raw_addr3 = try!(packet.read_u32());
-                //let raw_addr4 = try!(packet.read_u32());
-                //let addr = Ipv6Addr::new(((raw_addr1 >> 16) & 0xFFFF) as u16,
-                //                         ((raw_addr1 >> 0) & 0xFFFF) as u16,
-                //                         ((raw_addr2 >> 16) & 0xFFFF) as u16,
-                //                         ((raw_addr2 >> 0) & 0xFFFF) as u16,
-                //                         ((raw_addr3 >> 16) & 0xFFFF) as u16,
-                //                         ((raw_addr3 >> 0) & 0xFFFF) as u16,
-                //                         ((raw_addr4 >> 16) & 0xFFFF) as u16,
-                //                         ((raw_addr4 >> 0) & 0xFFFF) as u16);
-
-                //return Ok(ResourceRecord::AAAA(domain, addr, ttl));
-            },
-            ResourceRecord::NS(ref domain, ref addr, ttl) => {
-                //let mut ns = String::new();
-                //try!(packet.read_qname(&mut ns, true));
-                //packet.pos += data_len as usize;
-
-                //return Ok(ResourceRecord::NS(domain, ns, ttl));
-            },
+            //ResourceRecord::AAAA(ref host, ref addr, ttl) => {
+            //},
+            //ResourceRecord::NS(ref domain, ref addr, ttl) => {
+            //},
             ResourceRecord::CNAME(ref domain, ref addr, ttl) => {
                 try!(packet.write_qname(domain));
                 try!(packet.write_u16(QueryType::CNAME as u16));
@@ -192,31 +165,10 @@ impl ResourceRecord {
 
                 try!(packet.write_qname(addr));
             },
-            ResourceRecord::SRV(ref domain, priority, weight, port, ref srv, ttl) => {
-                //let priority = try!(packet.read_u16());
-                //let weight = try!(packet.read_u16());
-                //let port = try!(packet.read_u16());
-
-                //let mut srv = String::new();
-                //let _ = packet.read_qname(&mut srv, true);
-                //packet.pos += data_len as usize;
-
-                //return Ok(ResourceRecord::SRV(domain,
-                //                           priority,
-                //                           weight,
-                //                           port,
-                //                           srv,
-                //                           ttl));
-            },
-            ResourceRecord::MX(ref domain, priority, ref mx, ttl) => {
-                //let newpos = packet.pos + data_len as usize;
-                //let priority = try!(packet.read_u16());
-                //let mut mx = String::new();
-                //try!(packet.read_qname(&mut mx, false));
-                //packet.pos = newpos;
-
-                //return Ok(ResourceRecord::MX(domain, priority, mx, ttl));
-            },
+            //ResourceRecord::SRV(ref domain, priority, weight, port, ref srv, ttl) => {
+            //},
+            //ResourceRecord::MX(ref domain, priority, ref mx, ttl) => {
+            //},
             _ => {
             }
         }
@@ -366,16 +318,6 @@ impl DnsQuestion {
         let typenum = self.qtype.clone() as u16;
         try!(packet.write_u16(typenum));
         try!(packet.write_u16(1));
-        //for realstr in self.name.split(".") {
-        //    try!(writer.write(&[ realstr.len() as u8 ]));
-        //    try!(writer.write(realstr.as_bytes()));
-        //}
-        //try!(writer.write(&[ 0 ]));
-
-        //let typenum = self.qtype.clone() as u32;
-        //try!(writer.write(&[ (typenum >> 8) as u8,
-        //                     (typenum & 0xFF) as u8 ]));
-        //try!(writer.write(&[ 0, 1 ]));
 
         Ok(())
     }

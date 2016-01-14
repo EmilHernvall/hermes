@@ -8,12 +8,7 @@ use std::net::UdpSocket;
 
 use dns::resolve::DnsResolver;
 use dns::protocol::{DnsPacket,
-                    DnsHeader,
-                    DnsQuestion,
-                    ResourceRecord,
-                    QueryType,
-                    QueryResult,
-                    querytype};
+                    DnsHeader};
 
 fn run_server() -> Result<()> {
     let socket = try!(UdpSocket::bind("0.0.0.0:1053"));
@@ -25,8 +20,8 @@ fn run_server() -> Result<()> {
         if let Ok(request) = packet.read() {
 
             let mut req_packet = DnsPacket::new();
-            {
 
+            {
                 let mut resolver = DnsResolver::new();
                 let mut results = Vec::new();
                 for question in &request.questions {
@@ -58,9 +53,8 @@ fn run_server() -> Result<()> {
                 }
 
                 for answer in answers {
-                    answer.write(&mut req_packet);
+                    try!(answer.write(&mut req_packet));
                 }
-
             };
 
             try!(socket.send_to(&req_packet.buf[0..req_packet.pos], src));
