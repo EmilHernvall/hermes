@@ -35,13 +35,13 @@ impl<'a> DnsResolver<'a> {
                            new_authorities: &mut Vec<ResourceRecord>) {
 
         for auth in &response.authorities {
-            if let &ResourceRecord::NS(ref suffix, ref host, _) = auth {
+            if let ResourceRecord::NS(ref suffix, ref host, _) = *auth {
                 if suffix != qname {
                     continue;
                 }
 
                 for rsrc in &response.resources {
-                    if let &ResourceRecord::A(ref host2, ref ip, ref ttl) = rsrc {
+                    if let ResourceRecord::A(ref host2, ref ip, ref ttl) = *rsrc {
                         if host2 != host {
                             continue;
                         }
@@ -92,21 +92,25 @@ impl<'a> DnsResolver<'a> {
         if let Some(ns) = nswrap {
             let mut resolver = DnsUdpClient::new(&ns);
             let result = resolver.send_query(qname, QueryType::NS);
-            if let Ok(ref response) = result {
+            if let Ok(response) = result {
                 let mut new_authorities = Vec::new();
-                self.compile_authorities(qname, response, &mut new_authorities);
+                self.compile_authorities(qname, &response, &mut new_authorities);
 
                 // Check if new authorities are available. If they are not,
                 // fall through and return the previous result.
                 if new_authorities.len() > 0 {
                     //println!("qname={} ns={}", qname, ns);
                     return Ok(QueryResult {
-                        domain: qname.clone(),
+                        id: 0,
+                        questions: Vec::new(),
                         answers: Vec::new(),
                         authorities: new_authorities,
                         resources: Vec::new()
                     });
                 }
+            }
+            else {
+                return result;
             }
         }
 
@@ -116,7 +120,8 @@ impl<'a> DnsResolver<'a> {
 
     pub fn resolve(&mut self, qname: &String) -> Result<QueryResult> {
         // Start out by recursively resolving the nameserver
-        if let Ok(response) = self.resolve_nameserver(qname) {
+        let res = self.resolve_nameserver(qname);
+        if let Ok(ref response) = res {
             //println!("matched domain: {}", response.domain);
 
             // Pick a random name server
@@ -131,7 +136,8 @@ impl<'a> DnsResolver<'a> {
             }
         }
 
-        Err(Error::new(ErrorKind::NotFound, "No DNS server found"))
+        res
+        //Err(Error::new(ErrorKind::NotFound, "No DNS server found"))
     }
 }
 

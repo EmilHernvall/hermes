@@ -5,75 +5,69 @@ extern crate rand;
 use std::env;
 use std::io::Result;
 use std::net::UdpSocket;
-use std::io::BufWriter;
 
 use dns::resolve::DnsResolver;
-use dns::protocol::{DnsProtocol,
+use dns::protocol::{DnsPacket,
                     DnsHeader,
                     DnsQuestion,
+                    ResourceRecord,
                     QueryType,
+                    QueryResult,
                     querytype};
-
-fn build_response(id: u16,
-                  qname: &String,
-                  qtype: QueryType,
-                  answers: u16,
-                  data: &mut Vec<u8>) -> Result<()> {
-
-    let mut writer = BufWriter::new(data);
-
-    let mut head = DnsHeader::new();
-    head.id = id;
-    head.recursion_available = true;
-    head.questions = 1;
-    head.answers = 1;
-
-    try!(head.write(&mut writer));
-
-    let question = DnsQuestion::new(qname, qtype);
-    try!(question.write(&mut writer));
-
-    Ok(())
-}
 
 fn run_server() -> Result<()> {
     let socket = try!(UdpSocket::bind("0.0.0.0:1053"));
 
     loop {
-        let mut reqbuf = [0; 512];
-        let (amt, src) = try!(socket.recv_from(&mut reqbuf));
+        let mut packet = DnsPacket::new();
+        let (_, src) = try!(socket.recv_from(&mut packet.buf));
 
-        let mut protocol = DnsProtocol::new();
-        protocol.buf = reqbuf;
-        protocol.pos = 0;
+        if let Ok(request) = packet.read() {
 
-        let mut header = DnsHeader::new();
-        try!(header.read(&mut protocol));
-        println!("{}", header);
+            let mut req_packet = DnsPacket::new();
+            {
 
-        let mut qname = String::new();
-        protocol.read_qname(&mut qname, false);
+                let mut resolver = DnsResolver::new();
+                let mut results = Vec::new();
+                for question in &request.questions {
+                    println!("{}", question);
+                    if let Ok(result) = resolver.resolve(&question.name) {
+                        results.push(result);
+                    }
+                }
 
-        let qtype = querytype(protocol.read_u16());
-        let _ = protocol.read_u16();
+                let mut answers = Vec::new();
+                for result in results {
+                    for answer in result.answers {
+                        println!("{:?}", answer);
+                        answers.push(answer);
+                    }
+                }
 
-        println!("qname: {}", qname);
-        println!("qtype: {:?}", qtype);
+                let mut head = DnsHeader::new();
+                head.id = request.id;
+                head.recursion_available = true;
+                head.questions = request.questions.len() as u16;
+                head.answers = answers.len() as u16;
+                head.response = true;
 
-        let mut resolver = DnsResolver::new();
-        if let Ok(result) = resolver.resolve(&qname) {
-            println!("answers:");
-            for x in result.answers {
-                println!("\t{:?}", x);
-            }
+                try!(head.write(&mut req_packet));
+
+                for question in request.questions {
+                    try!(question.write(&mut req_packet));
+                }
+
+                for answer in answers {
+                    answer.write(&mut req_packet);
+                }
+
+            };
+
+            try!(socket.send_to(&req_packet.buf[0..req_packet.pos], src));
         }
-
-        //let mut resbuf = Vec::new();
-        //try!(build_response(header.id, &qname, qtype, &mut resbuf));
-        //try!(socket.send_to(&resbuf, src));
     }
 
-    Ok(())
+    //Ok(())
 }
 
 fn main() {
@@ -81,8 +75,9 @@ fn main() {
     if let Some(arg1) = env::args().nth(1) {
 
         let mut resolver = DnsResolver::new();
-        if let Ok(result) = resolver.resolve(&arg1) {
-            println!("query domain: {0}", result.domain);
+        let res = resolver.resolve(&arg1);
+        if let Ok(result) = res {
+            //println!("query domain: {0}", result.domain);
 
             println!("answers:");
             for x in result.answers {
@@ -99,6 +94,9 @@ fn main() {
                 println!("\t{:?}", x);
             }
 
+        }
+        else if let Err(err) = res {
+            println!("error: {}", err);
         }
     }
     else {
