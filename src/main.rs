@@ -1,6 +1,7 @@
 mod dns;
 
 extern crate rand;
+extern crate chrono;
 
 use std::env;
 use std::io::Result;
@@ -12,6 +13,7 @@ use dns::protocol::{DnsPacket,
 
 fn run_server() -> Result<()> {
     let socket = try!(UdpSocket::bind("0.0.0.0:1053"));
+    let mut resolver = DnsResolver::new();
 
     loop {
         let mut packet = DnsPacket::new();
@@ -22,7 +24,6 @@ fn run_server() -> Result<()> {
             let mut req_packet = DnsPacket::new();
 
             {
-                let mut resolver = DnsResolver::new();
                 let mut results = Vec::new();
                 for question in &request.questions {
                     println!("{}", question);
