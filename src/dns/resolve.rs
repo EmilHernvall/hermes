@@ -1,13 +1,53 @@
 use std::io::Result;
 use std::vec::Vec;
+use std::collections::HashMap;
 use std::io::{Error, ErrorKind};
 use rand::random;
 
 use dns::protocol::{ResourceRecord, QueryType, QueryResult};
 use dns::udp::DnsUdpClient;
 
+pub struct RecordSet {
+    pub records: Vec<ResourceRecord>,
+    pub authorities: Vec<ResourceRecord>,
+    pub additional: Vec<ResourceRecord>
+}
+
+impl RecordSet {
+    pub fn from_query_result(qr: &QueryResult) -> RecordSet {
+        let mut rs = RecordSet {
+            records: Vec::new(),
+            authorities: Vec::new(),
+            additional: Vec::new()
+        };
+
+        rs.records.extend(qr.answers.iter().cloned());
+        rs.authorities.extend(qr.authorities.iter().cloned());
+        rs.additional.extend(qr.resources.iter().cloned());
+
+        rs
+    }
+
+    pub fn to_query_result(&self) -> QueryResult {
+        let mut qr = QueryResult {
+            id: 0,
+            questions: Vec::new(),
+            answers: Vec::new(),
+            authorities: Vec::new(),
+            resources: Vec::new()
+        };
+
+        qr.answers.extend(self.records.iter().cloned());
+        qr.authorities.extend(self.authorities.iter().cloned());
+        qr.resources.extend(self.additional.iter().cloned());
+
+        qr
+    }
+}
+
 pub struct DnsResolver<'a> {
-    rootservers: Vec<&'a str>
+    rootservers: Vec<&'a str>,
+    cache: HashMap<String, RecordSet>
 }
 
 impl<'a> DnsResolver<'a> {
@@ -25,36 +65,17 @@ impl<'a> DnsResolver<'a> {
                                "192.58.128.30",
                                "193.0.14.129",
                                "199.7.83.42",
-                               "202.12.27.33" ]
-        }
-    }
-
-    fn compile_authorities(&mut self,
-                           qname: &String,
-                           response: &QueryResult,
-                           new_authorities: &mut Vec<ResourceRecord>) {
-
-        for auth in &response.authorities {
-            if let ResourceRecord::NS(ref suffix, ref host, _) = *auth {
-                if suffix != qname {
-                    continue;
-                }
-
-                for rsrc in &response.resources {
-                    if let ResourceRecord::A(ref host2, ref ip, ref ttl) = *rsrc {
-                        if host2 != host {
-                            continue;
-                        }
-
-                        let rec = ResourceRecord::A(host.clone(), ip.clone(), *ttl);
-                        new_authorities.push(rec);
-                    }
-                }
-            }
+                               "202.12.27.33" ],
+            cache: HashMap::new()
         }
     }
 
     fn resolve_nameserver(&mut self, qname: &String) -> Result<QueryResult> {
+
+        if let Some(rs) = self.cache.get(qname) {
+            println!("cache hit for {}", qname);
+            return Ok(rs.to_query_result());
+        }
 
         let err = Error::new(ErrorKind::NotFound, "No DNS server found");
         let mut final_result: Result<QueryResult> = Err(err);
@@ -77,12 +98,13 @@ impl<'a> DnsResolver<'a> {
         else {
             let nsresult = self.resolve_nameserver(&part.to_string());
             if let Ok(ref nsresponse) = nsresult {
-                let auths = &nsresponse.authorities;
+                nswrap = nsresponse.get_random_ns(qname);
+                //let auths = &nsresponse.authorities;
 
-                let idx = random::<usize>() % auths.len();
-                if let ResourceRecord::A(_, ip, _) = auths[idx] {
-                    nswrap = Some(ip.to_string());
-                }
+                //let idx = random::<usize>() % auths.len();
+                //if let ResourceRecord::A(_, ip, _) = auths[idx] {
+                //    nswrap = Some(ip.to_string());
+                //}
             }
 
             final_result = nsresult;
@@ -91,22 +113,26 @@ impl<'a> DnsResolver<'a> {
         // Perform lookup of the nameserver against the selected name server
         if let Some(ns) = nswrap {
             let mut resolver = DnsUdpClient::new(&ns);
+
             let result = resolver.send_query(qname, QueryType::NS);
             if let Ok(response) = result {
-                let mut new_authorities = Vec::new();
-                self.compile_authorities(qname, &response, &mut new_authorities);
+                self.cache.insert(qname.to_string(), RecordSet::from_query_result(&response));
+
+                //let mut new_authorities = Vec::new();
+                //self.compile_authorities(qname, &response, &mut new_authorities);
 
                 // Check if new authorities are available. If they are not,
                 // fall through and return the previous result.
-                if new_authorities.len() > 0 {
+                if response.authorities.len() > 0 {
+                    return Ok(response.clone());
                     //println!("qname={} ns={}", qname, ns);
-                    return Ok(QueryResult {
-                        id: 0,
-                        questions: Vec::new(),
-                        answers: Vec::new(),
-                        authorities: new_authorities,
-                        resources: Vec::new()
-                    });
+                    //return Ok(QueryResult {
+                    //    id: 0,
+                    //    questions: Vec::new(),
+                    //    answers: Vec::new(),
+                    //    authorities: new_authorities,
+                    //    resources: Vec::new()
+                    //});
                 }
             }
             else {
@@ -121,23 +147,22 @@ impl<'a> DnsResolver<'a> {
     pub fn resolve(&mut self, qname: &String) -> Result<QueryResult> {
         // Start out by recursively resolving the nameserver
         let res = self.resolve_nameserver(qname);
-        if let Ok(ref response) = res {
-            //println!("matched domain: {}", response.domain);
+        //if let Ok(ref response) = res {
+        //    //println!("matched domain: {}", response.domain);
 
-            // Pick a random name server
-            let auths = &response.authorities;
-            let idx = random::<usize>() % auths.len();
-            if let ResourceRecord::A(_, ip, _) = auths[idx] {
-                let ipstr = ip.to_string();
+        //    // Pick a random name server
+        //    let auths = &response.authorities;
+        //    let idx = random::<usize>() % auths.len();
+        //    if let ResourceRecord::A(_, ip, _) = auths[idx] {
+        //        let ipstr = ip.to_string();
 
-                // Perform a fresh query for an A record against that nameserver
-                let mut resolver = DnsUdpClient::new(&ipstr);
-                return resolver.send_query(qname, QueryType::A);
-            }
-        }
+        //        // Perform a fresh query for an A record against that nameserver
+        //        let mut resolver = DnsUdpClient::new(&ipstr);
+        //        return resolver.send_query(qname, QueryType::A);
+        //    }
+        //}
 
         res
         //Err(Error::new(ErrorKind::NotFound, "No DNS server found"))
     }
 }
-

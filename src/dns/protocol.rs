@@ -2,6 +2,7 @@ use std::fmt;
 use std::net::{Ipv4Addr,Ipv6Addr};
 use std::io::Result;
 use std::io::{Error, ErrorKind};
+use rand::random;
 
 #[derive(PartialEq)]
 #[derive(Debug)]
@@ -37,6 +38,7 @@ pub fn querytype(num: u16) -> QueryType {
 }
 
 #[derive(Debug)]
+#[derive(Clone)]
 #[allow(dead_code)]
 pub enum ResourceRecord {
     UNKNOWN(String, u16, u16, u32), // 0
@@ -232,130 +234,166 @@ impl DnsHeader {
 
         try!(packet.write_u8( (self.rescode) |
                               ((self.checking_disabled as u8) << 4) |
-                              ((self.authed_data as u8) << 5) |
-                              ((self.z as u8) << 6) |
-                              ((self.recursion_available as u8) << 7) ));
+                          ((self.authed_data as u8) << 5) |
+                          ((self.z as u8) << 6) |
+                          ((self.recursion_available as u8) << 7) ));
 
-        try!(packet.write_u16(self.questions));
-        try!(packet.write_u16(self.answers));
-        try!(packet.write_u16(self.authoritative_entries));
-        try!(packet.write_u16(self.resource_entries));
+    try!(packet.write_u16(self.questions));
+    try!(packet.write_u16(self.answers));
+    try!(packet.write_u16(self.authoritative_entries));
+    try!(packet.write_u16(self.resource_entries));
 
-        Ok(())
-    }
+    Ok(())
+}
 
-    pub fn read(&mut self, packet: &mut DnsPacket) -> Result<()> {
-        self.id = try!(packet.read_u16());
+pub fn read(&mut self, packet: &mut DnsPacket) -> Result<()> {
+    self.id = try!(packet.read_u16());
 
-        let flags = try!(packet.read_u16());
-        let a = (flags >> 8) as u8;
-        let b = (flags & 0xFF) as u8;
-        self.recursion_desired = (a & (1 << 0)) > 0;
-        self.truncated_message = (a & (1 << 1)) > 0;
-        self.authoritative_answer = (a & (1 << 2)) > 0;
-        self.opcode = (a >> 3) & 0x0F;
-        self.response = (a & (1 << 7)) > 0;
+    let flags = try!(packet.read_u16());
+    let a = (flags >> 8) as u8;
+    let b = (flags & 0xFF) as u8;
+    self.recursion_desired = (a & (1 << 0)) > 0;
+    self.truncated_message = (a & (1 << 1)) > 0;
+    self.authoritative_answer = (a & (1 << 2)) > 0;
+    self.opcode = (a >> 3) & 0x0F;
+    self.response = (a & (1 << 7)) > 0;
 
-        self.rescode = b & 0x0F;
-        self.checking_disabled = (b & (1 << 4)) > 0;
-        self.authed_data = (b & (1 << 5)) > 0;
-        self.z = (b & (1 << 6)) > 0;
-        self.recursion_available = (b & (1 << 7)) > 0;
+    self.rescode = b & 0x0F;
+    self.checking_disabled = (b & (1 << 4)) > 0;
+    self.authed_data = (b & (1 << 5)) > 0;
+    self.z = (b & (1 << 6)) > 0;
+    self.recursion_available = (b & (1 << 7)) > 0;
 
-        self.questions = try!(packet.read_u16());
-        self.answers = try!(packet.read_u16());
-        self.authoritative_entries = try!(packet.read_u16());
-        self.resource_entries = try!(packet.read_u16());
+    self.questions = try!(packet.read_u16());
+    self.answers = try!(packet.read_u16());
+    self.authoritative_entries = try!(packet.read_u16());
+    self.resource_entries = try!(packet.read_u16());
 
-        // Return the constant header size
-        Ok(())
-    }
+    // Return the constant header size
+    Ok(())
+}
 }
 
 impl fmt::Display for DnsHeader {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        try!(write!(f, "DnsHeader:\n"));
-        try!(write!(f, "\tid: {0}\n", self.id));
+fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    try!(write!(f, "DnsHeader:\n"));
+    try!(write!(f, "\tid: {0}\n", self.id));
 
-        try!(write!(f, "\trecursion_desired: {0}\n", self.recursion_desired));
-        try!(write!(f, "\ttruncated_message: {0}\n", self.truncated_message));
-        try!(write!(f, "\tauthoritative_answer: {0}\n", self.authoritative_answer));
-        try!(write!(f, "\topcode: {0}\n", self.opcode));
-        try!(write!(f, "\tresponse: {0}\n", self.response));
+    try!(write!(f, "\trecursion_desired: {0}\n", self.recursion_desired));
+    try!(write!(f, "\ttruncated_message: {0}\n", self.truncated_message));
+    try!(write!(f, "\tauthoritative_answer: {0}\n", self.authoritative_answer));
+    try!(write!(f, "\topcode: {0}\n", self.opcode));
+    try!(write!(f, "\tresponse: {0}\n", self.response));
 
-        try!(write!(f, "\trescode: {0}\n", self.rescode));
-        try!(write!(f, "\tchecking_disabled: {0}\n", self.checking_disabled));
-        try!(write!(f, "\tauthed_data: {0}\n", self.authed_data));
-        try!(write!(f, "\tz: {0}\n", self.z));
-        try!(write!(f, "\trecursion_available: {0}\n", self.recursion_available));
+    try!(write!(f, "\trescode: {0}\n", self.rescode));
+    try!(write!(f, "\tchecking_disabled: {0}\n", self.checking_disabled));
+    try!(write!(f, "\tauthed_data: {0}\n", self.authed_data));
+    try!(write!(f, "\tz: {0}\n", self.z));
+    try!(write!(f, "\trecursion_available: {0}\n", self.recursion_available));
 
-        try!(write!(f, "\tquestions: {0}\n", self.questions));
-        try!(write!(f, "\tanswers: {0}\n", self.answers));
-        try!(write!(f, "\tauthoritative_entries: {0}\n", self.authoritative_entries));
-        try!(write!(f, "\tresource_entries: {0}\n", self.resource_entries));
+    try!(write!(f, "\tquestions: {0}\n", self.questions));
+    try!(write!(f, "\tanswers: {0}\n", self.answers));
+    try!(write!(f, "\tauthoritative_entries: {0}\n", self.authoritative_entries));
+    try!(write!(f, "\tresource_entries: {0}\n", self.resource_entries));
 
-        Ok(())
-    }
+    Ok(())
+}
 }
 
 #[derive(Debug)]
+#[derive(Clone)]
 pub struct DnsQuestion {
-    pub name: String,
-    pub qtype: QueryType
+pub name: String,
+pub qtype: QueryType
 }
 
 impl DnsQuestion {
-    pub fn new(name: &String, qtype: QueryType) -> DnsQuestion {
-        DnsQuestion { name: name.to_string(),
-                      qtype: qtype }
-    }
+pub fn new(name: &String, qtype: QueryType) -> DnsQuestion {
+    DnsQuestion { name: name.to_string(),
+                  qtype: qtype }
+}
 
-    pub fn write(&self, packet: &mut DnsPacket) -> Result<()> {
-    //pub fn write<T : Write>(&self, writer: &mut BufWriter<T>) -> Result<()> {
+pub fn write(&self, packet: &mut DnsPacket) -> Result<()> {
+//pub fn write<T : Write>(&self, writer: &mut BufWriter<T>) -> Result<()> {
 
-        try!(packet.write_qname(&self.name));
+    try!(packet.write_qname(&self.name));
 
-        let typenum = self.qtype.clone() as u16;
-        try!(packet.write_u16(typenum));
-        try!(packet.write_u16(1));
+    let typenum = self.qtype.clone() as u16;
+    try!(packet.write_u16(typenum));
+    try!(packet.write_u16(1));
 
-        Ok(())
-    }
+    Ok(())
+}
 
-    pub fn read(&mut self, packet: &mut DnsPacket) -> Result<()> {
-        let _ = packet.read_qname(&mut self.name, false);
-        self.qtype = querytype(try!(packet.read_u16())); // qtype
-        let _ = packet.read_u16(); // class
+pub fn read(&mut self, packet: &mut DnsPacket) -> Result<()> {
+    let _ = packet.read_qname(&mut self.name, false);
+    self.qtype = querytype(try!(packet.read_u16())); // qtype
+    let _ = packet.read_u16(); // class
 
-        Ok(())
-    }
+    Ok(())
+}
 }
 
 impl fmt::Display for DnsQuestion {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        try!(write!(f, "DnsQuestion:\n"));
-        try!(write!(f, "\tname: {0}\n", self.name));
-        try!(write!(f, "\trecord type: {:?}\n", self.qtype));
+fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    try!(write!(f, "DnsQuestion:\n"));
+    try!(write!(f, "\tname: {0}\n", self.name));
+    try!(write!(f, "\trecord type: {:?}\n", self.qtype));
 
-        Ok(())
+    Ok(())
+}
+}
+
+#[derive(Clone)]
+pub struct QueryResult {
+pub id: u16,
+pub questions: Vec<DnsQuestion>,
+pub answers: Vec<ResourceRecord>,
+pub authorities: Vec<ResourceRecord>,
+pub resources: Vec<ResourceRecord>
+}
+
+impl QueryResult {
+    pub fn get_random_ns(&self, qname: &str) -> Option<String> {
+
+        let mut new_authorities = Vec::new();
+        for auth in &self.authorities {
+            if let ResourceRecord::NS(ref suffix, ref host, _) = *auth {
+                if suffix != qname {
+                    continue;
+                }
+
+                for rsrc in &self.resources {
+                    if let ResourceRecord::A(ref host2, ref ip, ref ttl) = *rsrc {
+                        if host2 != host {
+                            continue;
+                        }
+
+                        let rec = ResourceRecord::A(host.clone(), ip.clone(), *ttl);
+                        new_authorities.push(rec);
+                    }
+                }
+            }
+        }
+
+        if new_authorities.len() > 0 {
+            let idx = random::<usize>() % new_authorities.len();
+            if let ResourceRecord::A(_, ip, _) = new_authorities[idx] {
+                return Some(ip.to_string());
+            }
+        }
+
+        None
     }
 }
 
-pub struct QueryResult {
-    pub id: u16,
-    pub questions: Vec<DnsQuestion>,
-    pub answers: Vec<ResourceRecord>,
-    pub authorities: Vec<ResourceRecord>,
-    pub resources: Vec<ResourceRecord>
-}
-
 pub struct DnsPacket {
-    pub buf: [u8; 512],
-    pub pos: usize
+pub buf: [u8; 512],
+pub pos: usize
 }
 
 impl DnsPacket {
-    pub fn new() -> DnsPacket {
+pub fn new() -> DnsPacket {
         DnsPacket {
             buf: [0; 512],
             pos: 0
