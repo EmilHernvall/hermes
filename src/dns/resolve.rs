@@ -21,21 +21,6 @@ impl RecordSet {
     pub fn append_record(&mut self, rec: &ResourceRecord) {
         self.records.push(rec.clone());
     }
-
-    /*pub fn to_query_result(&self) -> QueryResult {
-        let mut qr = QueryResult {
-            id: 0,
-            authoritative: false,
-            questions: Vec::new(),
-            answers: Vec::new(),
-            authorities: Vec::new(),
-            resources: Vec::new()
-        };
-
-        qr.answers.extend(self.records.iter().cloned());
-
-        qr
-    }*/
 }
 
 pub struct DnsResolver<'a> {
@@ -65,14 +50,14 @@ impl<'a> DnsResolver<'a> {
 
     fn fill_queryresult_from_cache(&self,
                                    qname: &String,
-                                   qtype: QueryType,
+                                   qtype: &QueryType,
                                    result_vec: &mut Vec<ResourceRecord>) {
 
         if let Some(ref rs) = self.cache.get(qname) {
             //println!("recordset {} has:", qname);
             for rec in &rs.records {
                 //println!("entry: {:?}", rec);
-                if rec.get_querytype() == qtype {
+                if rec.get_querytype() == *qtype {
                     result_vec.push(rec.clone());
                 }
             }
@@ -85,18 +70,28 @@ impl<'a> DnsResolver<'a> {
         let mut result = None;
 
         let mut qr = QueryResult::new(0, false);
-        self.fill_queryresult_from_cache(qname, qtype, &mut qr.answers);
-        self.fill_queryresult_from_cache(qname, QueryType::NS, &mut qr.authorities);
+        self.fill_queryresult_from_cache(qname, &qtype, &mut qr.answers);
+        if qtype == QueryType::A {
+            self.fill_queryresult_from_cache(qname, &QueryType::CNAME, &mut qr.answers);
+        }
+        self.fill_queryresult_from_cache(qname, &QueryType::NS, &mut qr.authorities);
 
         for authority in &qr.authorities {
             //println!("searching for {:?}", authority);
             if let ResourceRecord::NS(_, ref host, _) = *authority {
-                self.fill_queryresult_from_cache(host, QueryType::A, &mut qr.resources);
+                self.fill_queryresult_from_cache(host, &QueryType::A, &mut qr.resources);
             }
         }
 
-        if qr.answers.len() > 0 || qr.authorities.len() > 0 {
-            result = Some(qr);
+        if qtype == QueryType::NS {
+            if qr.authorities.len() > 0 {
+                result = Some(qr);
+            }
+        }
+        else {
+            if qr.answers.len() > 0 {
+                result = Some(qr);
+            }
         }
 
         result
@@ -130,23 +125,38 @@ impl<'a> DnsResolver<'a> {
         let idx = random::<usize>() % self.rootservers.len();
         let mut ns = self.rootservers[idx].to_string();
 
-        //loop {
+        // Next, try to do better than hitting the root servers by finding a closer
+        // NS in the cache
         let labels = qname.split('.').collect::<Vec<&str>>();
-        for label in (0..labels.len()+1).rev() {
-            let domain_idx = if label > 0 { label - 1 } else { 0 };
-            let domain = (domain_idx..labels.len()).map(|x| labels[x]).collect::<Vec<&str>>().join(".");
+        for lbl_idx in 0..labels.len()+1 {
+            let domain = labels[lbl_idx..labels.len()].join(".");
 
-            println!("label: {}", domain);
+            //println!("label: {}", domain);
 
+            if let Some(qr) = self.cache_lookup(&domain, QueryType::NS) {
+                println!("got ns cache hit for {}", domain);
+                //qr.print();
+
+                let resolved_ns = qr.get_resolved_ns(&domain);
+                if let Some(new_ns) = resolved_ns {
+                    ns = new_ns.clone();
+                    break;
+                }
+            }
+        }
+
+        // Start querying name servers
+        loop {
+            println!("attempting lookup of {} with ns {}", qname, ns);
             let response;
             let mut cached_response = false;
 
             // Check for a response in cache
-            if let Some(qr) = self.cache_lookup(&domain, QueryType::A) {
+            if let Some(qr) = self.cache_lookup(qname, QueryType::A) {
                 response = qr;
                 cached_response = true;
-                println!("got cache hit for {}", qname);
-                response.print();
+                println!("got A cache hit for {}", qname);
+                //response.print();
             }
             // Otherwise, hit an actual nameserver
             else {
