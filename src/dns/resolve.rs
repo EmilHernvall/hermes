@@ -63,26 +63,40 @@ impl<'a> DnsResolver<'a> {
         }
     }
 
-    pub fn cache_lookup(&mut self,
+    fn fill_queryresult_from_cache(&self,
+                                   qname: &String,
+                                   qtype: QueryType,
+                                   result_vec: &mut Vec<ResourceRecord>) {
+
+        if let Some(ref rs) = self.cache.get(qname) {
+            //println!("recordset {} has:", qname);
+            for rec in &rs.records {
+                //println!("entry: {:?}", rec);
+                if rec.get_querytype() == qtype {
+                    result_vec.push(rec.clone());
+                }
+            }
+        }
+    }
+
+    pub fn cache_lookup(&self,
                         qname: &String,
                         qtype: QueryType) -> Option<QueryResult> {
         let mut result = None;
 
-        if let Some(ref rs) = self.cache.get(qname) {
-            let mut qr = QueryResult::new(0, false);
+        let mut qr = QueryResult::new(0, false);
+        self.fill_queryresult_from_cache(qname, qtype, &mut qr.answers);
+        self.fill_queryresult_from_cache(qname, QueryType::NS, &mut qr.authorities);
 
-            for rec in &rs.records {
-                if rec.get_querytype() == qtype {
-                    qr.answers.push(rec.clone());
-                }
-                else if rec.get_querytype() == QueryType::NS {
-                    qr.authorities.push(rec.clone());
-                }
+        for authority in &qr.authorities {
+            //println!("searching for {:?}", authority);
+            if let ResourceRecord::NS(_, ref host, _) = *authority {
+                self.fill_queryresult_from_cache(host, QueryType::A, &mut qr.resources);
             }
+        }
 
-            if qr.answers.len() > 0 || qr.authorities.len() > 0 {
-                result = Some(qr);
-            }
+        if qr.answers.len() > 0 || qr.authorities.len() > 0 {
+            result = Some(qr);
         }
 
         result
@@ -116,15 +130,19 @@ impl<'a> DnsResolver<'a> {
         let idx = random::<usize>() % self.rootservers.len();
         let mut ns = self.rootservers[idx].to_string();
 
-        let qname_split = qname.split('.').collect::<Vec<&str>>();
-        //for i in 0..qname_split.len() {
-        loop {
+        //loop {
+        let labels = qname.split('.').collect::<Vec<&str>>();
+        for label in (0..labels.len()+1).rev() {
+            let domain_idx = if label > 0 { label - 1 } else { 0 };
+            let domain = (domain_idx..labels.len()).map(|x| labels[x]).collect::<Vec<&str>>().join(".");
+
+            println!("label: {}", domain);
 
             let response;
             let mut cached_response = false;
 
             // Check for a response in cache
-            if let Some(qr) = self.cache_lookup(qname, QueryType::A) {
+            if let Some(qr) = self.cache_lookup(&domain, QueryType::A) {
                 response = qr;
                 cached_response = true;
                 println!("got cache hit for {}", qname);
@@ -134,7 +152,7 @@ impl<'a> DnsResolver<'a> {
             else {
                 let ns_copy = ns.clone();
                 let mut resolver = DnsUdpClient::new(&ns_copy);
-                //println!("sending ns query for {} using {}", qname, ns);
+                println!("sending ns query for {} using {}", qname, ns);
                 response = try!(resolver.send_query(qname, QueryType::A));
                 //response.print();
             }

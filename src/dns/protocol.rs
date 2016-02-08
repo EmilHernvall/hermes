@@ -179,7 +179,6 @@ impl ResourceRecord {
     }
 
     pub fn get_querytype(&self) -> QueryType {
-
         match *self {
             ResourceRecord::A(_, _, _) => {
                 QueryType::A
@@ -204,8 +203,8 @@ impl ResourceRecord {
             }
         }
     }
-    pub fn get_domain(&self) -> Option<String> {
 
+    pub fn get_domain(&self) -> Option<String> {
         match *self {
             ResourceRecord::A(ref domain, _, _) => {
                 Some(domain.clone())
