@@ -177,6 +177,59 @@ impl ResourceRecord {
 
         Ok(())
     }
+
+    pub fn get_querytype(&self) -> QueryType {
+
+        match *self {
+            ResourceRecord::A(_, _, _) => {
+                QueryType::A
+            },
+            ResourceRecord::AAAA(_, _, _) => {
+                QueryType::AAAA
+            },
+            ResourceRecord::NS(_, _, _) => {
+                QueryType::NS
+            },
+            ResourceRecord::CNAME(_, _, _) => {
+                QueryType::CNAME
+            },
+            ResourceRecord::SRV(_, _, _, _, _, _) => {
+                QueryType::SRV
+            },
+            ResourceRecord::MX(_, _, _, _) => {
+                QueryType::MX
+            },
+            _ => {
+                QueryType::UNKNOWN
+            }
+        }
+    }
+    pub fn get_domain(&self) -> Option<String> {
+
+        match *self {
+            ResourceRecord::A(ref domain, _, _) => {
+                Some(domain.clone())
+            },
+            ResourceRecord::AAAA(ref domain, _, _) => {
+                Some(domain.clone())
+            },
+            ResourceRecord::NS(ref domain, _, _) => {
+                Some(domain.clone())
+            },
+            ResourceRecord::CNAME(ref domain, _, _) => {
+                Some(domain.clone())
+            },
+            ResourceRecord::SRV(ref domain, _, _, _, _, _) => {
+                Some(domain.clone())
+            },
+            ResourceRecord::MX(ref domain, _, _, _) => {
+                Some(domain.clone())
+            },
+            _ => {
+                None
+            }
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -303,8 +356,8 @@ fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 #[derive(Debug)]
 #[derive(Clone)]
 pub struct DnsQuestion {
-pub name: String,
-pub qtype: QueryType
+    pub name: String,
+    pub qtype: QueryType
 }
 
 impl DnsQuestion {
@@ -344,22 +397,67 @@ fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct QueryResult {
-pub id: u16,
-pub questions: Vec<DnsQuestion>,
-pub answers: Vec<ResourceRecord>,
-pub authorities: Vec<ResourceRecord>,
-pub resources: Vec<ResourceRecord>
+    pub id: u16,
+    pub authoritative: bool,
+    pub questions: Vec<DnsQuestion>,
+    pub answers: Vec<ResourceRecord>,
+    pub authorities: Vec<ResourceRecord>,
+    pub resources: Vec<ResourceRecord>
 }
 
 impl QueryResult {
-    pub fn get_random_ns(&self, qname: &str) -> Option<String> {
+    pub fn new(id: u16, authoritative: bool) -> QueryResult {
+        QueryResult {
+            id: id,
+            authoritative: authoritative,
+            questions: Vec::new(),
+            answers: Vec::new(),
+            authorities: Vec::new(),
+            resources: Vec::new()
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn print(&self) {
+        //println!("query domain: {0}", self.domain);
+
+        println!("answers:");
+        for x in &self.answers {
+            println!("\t{:?}", x);
+        }
+
+        println!("authorities:");
+        for x in &self.authorities {
+            println!("\t{:?}", x);
+        }
+
+        println!("resources:");
+        for x in &self.resources {
+            println!("\t{:?}", x);
+        }
+    }
+
+    pub fn get_random_a(&self, qname: &str) -> Option<String> {
+        //let candidates = self.answers.filter(|x| )
+        if self.answers.len() > 0 {
+            //let idx = random::<usize>() % self.answers.len();
+            let a_record = &self.answers[0];
+            if let &ResourceRecord::A(_, ref ip, _) = a_record {
+                return Some(ip.to_string());
+            }
+        }
+
+        None
+    }
+
+    pub fn get_resolved_ns(&self, qname: &str) -> Option<String> {
 
         let mut new_authorities = Vec::new();
         for auth in &self.authorities {
             if let ResourceRecord::NS(ref suffix, ref host, _) = *auth {
-                if suffix != qname {
+                if !qname.ends_with(suffix) {
                     continue;
                 }
 
@@ -385,11 +483,32 @@ impl QueryResult {
 
         None
     }
+
+    pub fn get_unresolved_ns(&self, qname: &str) -> Option<String> {
+
+        let mut new_authorities = Vec::new();
+        for auth in &self.authorities {
+            if let ResourceRecord::NS(ref suffix, ref host, _) = *auth {
+                if !qname.ends_with(suffix) {
+                    continue;
+                }
+
+                new_authorities.push(host);
+            }
+        }
+
+        if new_authorities.len() > 0 {
+            let idx = random::<usize>() % new_authorities.len();
+            return Some(new_authorities[idx].clone());
+        }
+
+        None
+    }
 }
 
 pub struct DnsPacket {
-pub buf: [u8; 512],
-pub pos: usize
+    pub buf: [u8; 512],
+    pub pos: usize
 }
 
 impl DnsPacket {
@@ -538,11 +657,7 @@ pub fn new() -> DnsPacket {
         let mut header = DnsHeader::new();
         try!(header.read(self));
 
-        let mut result = QueryResult { id: header.id,
-                                       questions: Vec::new(),
-                                       answers: Vec::new(),
-                                       authorities: Vec::new(),
-                                       resources: Vec::new() };
+        let mut result = QueryResult::new(header.id, header.authoritative_answer);
 
         for _ in 0..header.questions {
             let mut question = DnsQuestion::new(&"".to_string(),
