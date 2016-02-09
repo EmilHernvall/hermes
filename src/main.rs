@@ -1,6 +1,7 @@
 mod dns;
 
 extern crate rand;
+extern crate chrono;
 
 use std::env;
 use std::io::Result;

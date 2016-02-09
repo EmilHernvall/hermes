@@ -37,8 +37,7 @@ pub fn querytype(num: u16) -> QueryType {
     }
 }
 
-#[derive(Debug)]
-#[derive(Clone)]
+#[derive(Debug,Clone,PartialEq,Eq,Hash)]
 #[allow(dead_code)]
 pub enum ResourceRecord {
     UNKNOWN(String, u16, u16, u32), // 0
@@ -180,53 +179,46 @@ impl ResourceRecord {
 
     pub fn get_querytype(&self) -> QueryType {
         match *self {
-            ResourceRecord::A(_, _, _) => {
-                QueryType::A
-            },
-            ResourceRecord::AAAA(_, _, _) => {
-                QueryType::AAAA
-            },
-            ResourceRecord::NS(_, _, _) => {
-                QueryType::NS
-            },
-            ResourceRecord::CNAME(_, _, _) => {
-                QueryType::CNAME
-            },
-            ResourceRecord::SRV(_, _, _, _, _, _) => {
-                QueryType::SRV
-            },
-            ResourceRecord::MX(_, _, _, _) => {
-                QueryType::MX
-            },
-            _ => {
-                QueryType::UNKNOWN
-            }
+            ResourceRecord::A(_, _, _) => QueryType::A,
+            ResourceRecord::AAAA(_, _, _) => QueryType::AAAA,
+            ResourceRecord::NS(_, _, _) => QueryType::NS,
+            ResourceRecord::CNAME(_, _, _) => QueryType::CNAME,
+            ResourceRecord::SRV(_, _, _, _, _, _) => QueryType::SRV,
+            ResourceRecord::MX(_, _, _, _) => QueryType::MX,
+            ResourceRecord::UNKNOWN(_, _, _, _) => QueryType::UNKNOWN,
+            ResourceRecord::SOA => QueryType::SOA,
+            ResourceRecord::PTR => QueryType::PTR,
+            ResourceRecord::TXT => QueryType::TXT
         }
     }
 
     pub fn get_domain(&self) -> Option<String> {
         match *self {
-            ResourceRecord::A(ref domain, _, _) => {
-                Some(domain.clone())
-            },
-            ResourceRecord::AAAA(ref domain, _, _) => {
-                Some(domain.clone())
-            },
-            ResourceRecord::NS(ref domain, _, _) => {
-                Some(domain.clone())
-            },
-            ResourceRecord::CNAME(ref domain, _, _) => {
-                Some(domain.clone())
-            },
-            ResourceRecord::SRV(ref domain, _, _, _, _, _) => {
-                Some(domain.clone())
-            },
-            ResourceRecord::MX(ref domain, _, _, _) => {
-                Some(domain.clone())
-            },
-            _ => {
-                None
-            }
+            ResourceRecord::A(ref domain, _, _) => Some(domain.clone()),
+            ResourceRecord::AAAA(ref domain, _, _) => Some(domain.clone()),
+            ResourceRecord::NS(ref domain, _, _) => Some(domain.clone()),
+            ResourceRecord::CNAME(ref domain, _, _) => Some(domain.clone()),
+            ResourceRecord::SRV(ref domain, _, _, _, _, _) => Some(domain.clone()),
+            ResourceRecord::MX(ref domain, _, _, _) => Some(domain.clone()),
+            ResourceRecord::UNKNOWN(ref domain, _, _, _) => Some(domain.clone()),
+            ResourceRecord::SOA => None,
+            ResourceRecord::PTR => None,
+            ResourceRecord::TXT => None
+        }
+    }
+
+    pub fn get_ttl(&self) -> u32 {
+        match *self {
+            ResourceRecord::A(_, _, ttl) => ttl,
+            ResourceRecord::AAAA(_, _, ttl) => ttl,
+            ResourceRecord::NS(_, _, ttl) => ttl,
+            ResourceRecord::CNAME(_, _, ttl) => ttl,
+            ResourceRecord::SRV(_, _, _, _, _, ttl) => ttl,
+            ResourceRecord::MX(_, _, _, ttl) => ttl,
+            ResourceRecord::UNKNOWN(_, _, _, ttl) => ttl,
+            ResourceRecord::SOA => 0,
+            ResourceRecord::PTR => 0,
+            ResourceRecord::TXT => 0
         }
     }
 }
@@ -438,11 +430,10 @@ impl QueryResult {
         }
     }
 
-    pub fn get_random_a(&self, qname: &str) -> Option<String> {
-        //let candidates = self.answers.filter(|x| )
+    pub fn get_random_a(&self) -> Option<String> {
         if self.answers.len() > 0 {
-            //let idx = random::<usize>() % self.answers.len();
-            let a_record = &self.answers[0];
+            let idx = random::<usize>() % self.answers.len();
+            let a_record = &self.answers[idx];
             if let &ResourceRecord::A(_, ref ip, _) = a_record {
                 return Some(ip.to_string());
             }

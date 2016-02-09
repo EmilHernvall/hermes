@@ -5,3 +5,4 @@ authors = ["emil"]
 
 [dependencies]
 rand = "0.3.13"
+chrono = "0.2"
