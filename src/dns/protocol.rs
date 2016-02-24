@@ -639,7 +639,7 @@ impl<'a, T> PacketBuffer for StreamPacketBuffer<'a, T> where T: Read + 'a {
         Ok(&self.buffer[start..start+len as usize])
     }
 
-    fn write(&mut self, val: u8) -> Result<()> {
+    fn write(&mut self, _: u8) -> Result<()> {
         Ok(())
     }
 

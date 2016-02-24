@@ -5,15 +5,15 @@ use rand::random;
 
 use dns::protocol::{QueryType, QueryResult};
 use dns::udp::DnsUdpClient;
-use dns::cache::Cache;
+use dns::cache::SynchronizedCache;
 
 pub struct DnsResolver<'a> {
     rootservers: Vec<&'a str>,
-    cache: Cache
+    cache: &'a SynchronizedCache
 }
 
 impl<'a> DnsResolver<'a> {
-    pub fn new() -> DnsResolver<'a> {
+    pub fn new(cache: &'a SynchronizedCache) -> DnsResolver<'a> {
         DnsResolver {
             rootservers: vec![ "198.41.0.4",
                                "192.228.79.201",
@@ -28,13 +28,13 @@ impl<'a> DnsResolver<'a> {
                                "193.0.14.129",
                                "199.7.83.42",
                                "202.12.27.33" ],
-            cache: Cache::new()
+            cache: cache
         }
     }
 
     pub fn resolve(&mut self, qname: &String) -> Result<QueryResult> {
 
-        if let Some(qr) = self.cache.lookup(qname, QueryType::A) {
+        if let Some(qr) = self.cache.lookup(qname.clone(), QueryType::A) {
             println!("got A cache hit for {}", qname);
             return Ok(qr);
         }
@@ -55,7 +55,7 @@ impl<'a> DnsResolver<'a> {
 
             //println!("label: {}", domain);
 
-            if let Some(qr) = self.cache.lookup(&domain, QueryType::NS) {
+            if let Some(qr) = self.cache.lookup(domain.clone(), QueryType::NS) {
                 println!("got ns cache hit for {}", domain);
                 //qr.print();
 
@@ -79,9 +79,9 @@ impl<'a> DnsResolver<'a> {
             // If we've got an actual answer, we're done!
             if response.answers.len() > 0 {
                 final_result = Ok(response.clone());
-                self.cache.update(&response.answers);
-                self.cache.update(&response.authorities);
-                self.cache.update(&response.resources);
+                self.cache.update(response.answers);
+                self.cache.update(response.authorities);
+                self.cache.update(response.resources);
                 break;
             }
 
@@ -90,9 +90,9 @@ impl<'a> DnsResolver<'a> {
             if let Some(new_ns) = response.get_resolved_ns(qname) {
                 // If there is such a record, we can retry the loop with that NS
                 ns = new_ns.clone();
-                self.cache.update(&response.answers);
-                self.cache.update(&response.authorities);
-                self.cache.update(&response.resources);
+                self.cache.update(response.answers);
+                self.cache.update(response.authorities);
+                self.cache.update(response.resources);
             }
             else {
                 // If not, we'll have to resolve the ip of a NS record

@@ -1,5 +1,8 @@
 use std::collections::{HashSet,HashMap};
 use std::hash::{Hash,Hasher};
+use std::sync::mpsc::{channel, Sender};
+use std::thread::spawn;
+use std::marker::{Send, Sync};
 
 use chrono::*;
 
@@ -116,7 +119,7 @@ impl Cache {
         result
     }
 
-    pub fn update(&mut self, records: &Vec<ResourceRecord>) {
+    pub fn update(&mut self, records: &Vec<ResourceRecord>) -> bool {
 
         for rec in records {
             if let Some(ref domain) = rec.get_domain() {
@@ -134,5 +137,84 @@ impl Cache {
                 println!("new record for {}: {:?}", domain, rec);
             }
         }
+
+        true
+    }
+}
+
+enum CacheRequest {
+    Update(Vec<ResourceRecord>),
+    Query(String, QueryType)
+}
+
+enum CacheResponse {
+    UpdateOk,
+    QueryOk(Option<QueryResult>)
+}
+
+pub type CacheMessage = (CacheRequest, Sender<CacheResponse>);
+
+#[derive(Clone)]
+pub struct SynchronizedCache {
+    pub tx: Option<Sender<CacheMessage>>
+}
+
+impl SynchronizedCache {
+    pub fn new() -> SynchronizedCache {
+        SynchronizedCache {
+            tx: None
+        }
+    }
+
+    pub fn run(&mut self) {
+
+        let (req_tx, req_rx) = channel();
+
+        self.tx = Some(req_tx);
+        //let (res_tx, res_rx) = channel();
+
+        spawn(move || {
+            let mut cache = Cache::new();
+            for (req, res_tx) in req_rx {
+                match req {
+                    CacheRequest::Update(records) => {
+                        cache.update(&records);
+                    },
+                    CacheRequest::Query(qname, qtype) => {
+                        let res = cache.lookup(&qname, qtype);
+                        let _ = res_tx.send(CacheResponse::QueryOk(res));
+                    }
+                }
+            }
+        });
+    }
+
+    pub fn lookup(&self,
+                  qname: String,
+                  qtype: QueryType) -> Option<QueryResult> {
+
+        if let Some(ref req_tx) = self.tx {
+            let (res_tx, res_rx) = channel();
+            let _ = req_tx.send((CacheRequest::Query(qname, qtype), res_tx));
+
+            if let Ok(CacheResponse::QueryOk(res)) = res_rx.recv() {
+                return res;
+            }
+        }
+
+        None
+    }
+
+    pub fn update(&self, records: Vec<ResourceRecord>) -> bool {
+        if let Some(ref req_tx) = self.tx {
+            let (res_tx, res_rx) = channel();
+            let _ = req_tx.send((CacheRequest::Update(records), res_tx));
+
+            if let Ok(CacheResponse::UpdateOk) = res_rx.recv() {
+                return true;
+            }
+        }
+
+        false
     }
 }

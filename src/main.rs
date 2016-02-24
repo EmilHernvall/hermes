@@ -5,11 +5,11 @@ extern crate chrono;
 
 use std::env;
 use std::io::{Result, Read, Write};
-use std::net::{UdpSocket, TcpListener, TcpStream};
+use std::net::{UdpSocket, TcpListener};
 use std::thread::spawn;
-use std::time::Duration;
 
 use dns::resolve::DnsResolver;
+use dns::cache::SynchronizedCache;
 use dns::protocol::{DnsPacket,
                     PacketBuffer,
                     BytePacketBuffer,
@@ -17,9 +17,10 @@ use dns::protocol::{DnsPacket,
                     VectorPacketBuffer,
                     DnsHeader};
 
-fn run_udp_server() -> Result<()> {
+fn run_udp_server(cache: &SynchronizedCache) -> Result<()> {
     let socket = try!(UdpSocket::bind("0.0.0.0:1053"));
-    let mut resolver = DnsResolver::new();
+
+    let mut resolver = DnsResolver::new(&cache);
 
     loop {
         let mut req_buffer = BytePacketBuffer::new();
@@ -90,13 +91,13 @@ fn run_udp_server() -> Result<()> {
     //Ok(())
 }
 
-fn run_tcp_server() -> Result<()> {
+fn run_tcp_server(cache: &SynchronizedCache) -> Result<()> {
     let listener = try!(TcpListener::bind("127.0.0.1:1053"));
-    let mut resolver = DnsResolver::new();
+
+    let mut resolver = DnsResolver::new(&cache);
 
     for wrap_stream in listener.incoming() {
         if let Ok(mut stream) = wrap_stream {
-            stream.set_read_timeout(Some(Duration::from_millis(10)));
 
             let request = {
                 let mut len_buffer = [0; 2];
@@ -163,9 +164,12 @@ fn run_tcp_server() -> Result<()> {
 
 fn main() {
 
+    let mut cache = SynchronizedCache::new();
+    cache.run();
+
     if let Some(arg1) = env::args().nth(1) {
 
-        let mut resolver = DnsResolver::new();
+        let mut resolver = DnsResolver::new(&cache);
         let res = resolver.resolve(&arg1);
         if let Ok(result) = res {
             //println!("query domain: {0}", result.domain);
@@ -193,8 +197,11 @@ fn main() {
     else {
         //println!("usage: ./resolve <domain>");
 
-        let udp_server = spawn(move|| run_udp_server());
-        let _ = spawn(move|| run_tcp_server());
+        let udp_cache_clone = cache.clone();
+        let udp_server = spawn(move|| run_udp_server(&udp_cache_clone));
+
+        let tcp_cache_clone = cache.clone();
+        let _ = spawn(move|| run_tcp_server(&tcp_cache_clone));
 
         let _ = udp_server.join();
     }
