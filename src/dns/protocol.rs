@@ -1,13 +1,10 @@
 use std::fmt;
 use std::net::{Ipv4Addr,Ipv6Addr};
-use std::io::Result;
+use std::io::{Result, Read};
 use std::io::{Error, ErrorKind};
 use rand::random;
 
-#[derive(PartialEq)]
-#[derive(Debug)]
-#[derive(Clone)]
-#[allow(dead_code)]
+#[derive(PartialEq,Debug,Clone)]
 pub enum QueryType {
     UNKNOWN = 0,
     A = 1,
@@ -54,7 +51,7 @@ pub enum ResourceRecord {
 }
 
 impl ResourceRecord {
-    pub fn read(packet: &mut DnsPacket) -> Result<ResourceRecord> {
+    pub fn read<T: PacketBuffer>(packet: &mut DnsPacket<T>) -> Result<ResourceRecord> {
         let mut domain = String::new();
         let _ = packet.read_qname(&mut domain, false);
 
@@ -91,14 +88,14 @@ impl ResourceRecord {
         else if qtype == QueryType::NS {
             let mut ns = String::new();
             try!(packet.read_qname(&mut ns, true));
-            packet.pos += data_len as usize;
+            try!(packet.buffer.step(data_len as usize));
 
             return Ok(ResourceRecord::NS(domain, ns, ttl));
         }
         else if qtype == QueryType::CNAME {
             let mut cname = String::new();
             try!(packet.read_qname(&mut cname, true));
-            packet.pos += data_len as usize;
+            try!(packet.buffer.step(data_len as usize));
 
             return Ok(ResourceRecord::CNAME(domain, cname, ttl));
         }
@@ -109,7 +106,7 @@ impl ResourceRecord {
 
             let mut srv = String::new();
             let _ = packet.read_qname(&mut srv, true);
-            packet.pos += data_len as usize;
+            try!(packet.buffer.step(data_len as usize));
 
             return Ok(ResourceRecord::SRV(domain,
                                        priority,
@@ -119,16 +116,17 @@ impl ResourceRecord {
                                        ttl));
         }
         else if qtype == QueryType::MX {
-            let newpos = packet.pos + data_len as usize;
+            let newpos = packet.buffer.pos() + data_len as usize;
             let priority = try!(packet.read_u16());
             let mut mx = String::new();
             try!(packet.read_qname(&mut mx, false));
-            packet.pos = newpos;
+            try!(packet.buffer.seek(newpos));
 
             return Ok(ResourceRecord::MX(domain, priority, mx, ttl));
         }
         else {
-            packet.pos += data_len as usize;
+            //packet.pos += data_len as usize;
+            try!(packet.buffer.step(data_len as usize));
 
             return Ok(ResourceRecord::UNKNOWN(domain,
                                               qtype as u16,
@@ -137,8 +135,8 @@ impl ResourceRecord {
         }
     }
 
-    pub fn write(&self,
-                 packet: &mut DnsPacket) -> Result<()> {
+    pub fn write<T: PacketBuffer>(&self,
+                                  packet: &mut DnsPacket<T>) -> Result<()> {
 
         match *self {
             ResourceRecord::A(ref host, ref addr, ttl) => {
@@ -176,6 +174,28 @@ impl ResourceRecord {
         }
 
         Ok(())
+    }
+
+    pub fn binary_len<T: PacketBuffer>(&self,
+                                       packet: &DnsPacket<T>) -> usize {
+
+        match *self {
+            ResourceRecord::A(ref host, _, _) => {
+                packet.qname_len(host) + 2 + 2 + 4 + 2 + 4
+            },
+            //ResourceRecord::AAAA(ref host, ref addr, ttl) => {
+            //},
+            //ResourceRecord::NS(ref domain, ref addr, ttl) => {
+            //},
+            ResourceRecord::CNAME(ref domain, ref addr, _) => {
+                packet.qname_len(domain) + 2 + 2 + 4 + 2 + packet.qname_len(addr)
+            },
+            //ResourceRecord::SRV(ref domain, priority, weight, port, ref srv, ttl) => {
+            //},
+            //ResourceRecord::MX(ref domain, priority, ref mx, ttl) => {
+            //},
+            _ => 0
+        }
     }
 
     pub fn get_querytype(&self) -> QueryType {
@@ -268,7 +288,7 @@ impl DnsHeader {
                     resource_entries: 0 }
     }
 
-    pub fn write(&self, packet: &mut DnsPacket) -> Result<()> {
+    pub fn write<T: PacketBuffer>(&self, packet: &mut DnsPacket<T>) -> Result<()> {
         try!(packet.write_u16(self.id));
 
         try!(packet.write_u8( ((self.recursion_desired as u8)) |
@@ -279,114 +299,122 @@ impl DnsHeader {
 
         try!(packet.write_u8( (self.rescode) |
                               ((self.checking_disabled as u8) << 4) |
-                          ((self.authed_data as u8) << 5) |
-                          ((self.z as u8) << 6) |
-                          ((self.recursion_available as u8) << 7) ));
+                              ((self.authed_data as u8) << 5) |
+                              ((self.z as u8) << 6) |
+                              ((self.recursion_available as u8) << 7) ));
 
-    try!(packet.write_u16(self.questions));
-    try!(packet.write_u16(self.answers));
-    try!(packet.write_u16(self.authoritative_entries));
-    try!(packet.write_u16(self.resource_entries));
+        try!(packet.write_u16(self.questions));
+        try!(packet.write_u16(self.answers));
+        try!(packet.write_u16(self.authoritative_entries));
+        try!(packet.write_u16(self.resource_entries));
 
-    Ok(())
-}
+        Ok(())
+    }
 
-pub fn read(&mut self, packet: &mut DnsPacket) -> Result<()> {
-    self.id = try!(packet.read_u16());
+    pub fn binary_len(&self) -> usize {
+        12
+    }
 
-    let flags = try!(packet.read_u16());
-    let a = (flags >> 8) as u8;
-    let b = (flags & 0xFF) as u8;
-    self.recursion_desired = (a & (1 << 0)) > 0;
-    self.truncated_message = (a & (1 << 1)) > 0;
-    self.authoritative_answer = (a & (1 << 2)) > 0;
-    self.opcode = (a >> 3) & 0x0F;
-    self.response = (a & (1 << 7)) > 0;
+    pub fn read<T: PacketBuffer>(&mut self, packet: &mut DnsPacket<T>) -> Result<()> {
+        self.id = try!(packet.read_u16());
 
-    self.rescode = b & 0x0F;
-    self.checking_disabled = (b & (1 << 4)) > 0;
-    self.authed_data = (b & (1 << 5)) > 0;
-    self.z = (b & (1 << 6)) > 0;
-    self.recursion_available = (b & (1 << 7)) > 0;
+        let flags = try!(packet.read_u16());
+        let a = (flags >> 8) as u8;
+        let b = (flags & 0xFF) as u8;
+        self.recursion_desired = (a & (1 << 0)) > 0;
+        self.truncated_message = (a & (1 << 1)) > 0;
+        self.authoritative_answer = (a & (1 << 2)) > 0;
+        self.opcode = (a >> 3) & 0x0F;
+        self.response = (a & (1 << 7)) > 0;
 
-    self.questions = try!(packet.read_u16());
-    self.answers = try!(packet.read_u16());
-    self.authoritative_entries = try!(packet.read_u16());
-    self.resource_entries = try!(packet.read_u16());
+        self.rescode = b & 0x0F;
+        self.checking_disabled = (b & (1 << 4)) > 0;
+        self.authed_data = (b & (1 << 5)) > 0;
+        self.z = (b & (1 << 6)) > 0;
+        self.recursion_available = (b & (1 << 7)) > 0;
 
-    // Return the constant header size
-    Ok(())
-}
+        self.questions = try!(packet.read_u16());
+        self.answers = try!(packet.read_u16());
+        self.authoritative_entries = try!(packet.read_u16());
+        self.resource_entries = try!(packet.read_u16());
+
+        // Return the constant header size
+        Ok(())
+    }
 }
 
 impl fmt::Display for DnsHeader {
-fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    try!(write!(f, "DnsHeader:\n"));
-    try!(write!(f, "\tid: {0}\n", self.id));
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        try!(write!(f, "DnsHeader:\n"));
+        try!(write!(f, "\tid: {0}\n", self.id));
 
-    try!(write!(f, "\trecursion_desired: {0}\n", self.recursion_desired));
-    try!(write!(f, "\ttruncated_message: {0}\n", self.truncated_message));
-    try!(write!(f, "\tauthoritative_answer: {0}\n", self.authoritative_answer));
-    try!(write!(f, "\topcode: {0}\n", self.opcode));
-    try!(write!(f, "\tresponse: {0}\n", self.response));
+        try!(write!(f, "\trecursion_desired: {0}\n", self.recursion_desired));
+        try!(write!(f, "\ttruncated_message: {0}\n", self.truncated_message));
+        try!(write!(f, "\tauthoritative_answer: {0}\n", self.authoritative_answer));
+        try!(write!(f, "\topcode: {0}\n", self.opcode));
+        try!(write!(f, "\tresponse: {0}\n", self.response));
 
-    try!(write!(f, "\trescode: {0}\n", self.rescode));
-    try!(write!(f, "\tchecking_disabled: {0}\n", self.checking_disabled));
-    try!(write!(f, "\tauthed_data: {0}\n", self.authed_data));
-    try!(write!(f, "\tz: {0}\n", self.z));
-    try!(write!(f, "\trecursion_available: {0}\n", self.recursion_available));
+        try!(write!(f, "\trescode: {0}\n", self.rescode));
+        try!(write!(f, "\tchecking_disabled: {0}\n", self.checking_disabled));
+        try!(write!(f, "\tauthed_data: {0}\n", self.authed_data));
+        try!(write!(f, "\tz: {0}\n", self.z));
+        try!(write!(f, "\trecursion_available: {0}\n", self.recursion_available));
 
-    try!(write!(f, "\tquestions: {0}\n", self.questions));
-    try!(write!(f, "\tanswers: {0}\n", self.answers));
-    try!(write!(f, "\tauthoritative_entries: {0}\n", self.authoritative_entries));
-    try!(write!(f, "\tresource_entries: {0}\n", self.resource_entries));
+        try!(write!(f, "\tquestions: {0}\n", self.questions));
+        try!(write!(f, "\tanswers: {0}\n", self.answers));
+        try!(write!(f, "\tauthoritative_entries: {0}\n", self.authoritative_entries));
+        try!(write!(f, "\tresource_entries: {0}\n", self.resource_entries));
 
-    Ok(())
+        Ok(())
+    }
 }
-}
 
-#[derive(Debug)]
-#[derive(Clone)]
+#[derive(Debug,Clone)]
 pub struct DnsQuestion {
     pub name: String,
     pub qtype: QueryType
 }
 
 impl DnsQuestion {
-pub fn new(name: &String, qtype: QueryType) -> DnsQuestion {
-    DnsQuestion { name: name.to_string(),
-                  qtype: qtype }
-}
+    pub fn new(name: &String, qtype: QueryType) -> DnsQuestion {
+        DnsQuestion {
+            name: name.to_string(),
+            qtype: qtype
+        }
+    }
 
-pub fn write(&self, packet: &mut DnsPacket) -> Result<()> {
-//pub fn write<T : Write>(&self, writer: &mut BufWriter<T>) -> Result<()> {
+    pub fn binary_len<T: PacketBuffer>(&self, packet: &DnsPacket<T>) -> usize {
+        packet.qname_len(&self.name) + 4
+    }
 
-    try!(packet.write_qname(&self.name));
+    pub fn write<T: PacketBuffer>(&self, packet: &mut DnsPacket<T>) -> Result<()> {
 
-    let typenum = self.qtype.clone() as u16;
-    try!(packet.write_u16(typenum));
-    try!(packet.write_u16(1));
+        try!(packet.write_qname(&self.name));
 
-    Ok(())
-}
+        let typenum = self.qtype.clone() as u16;
+        try!(packet.write_u16(typenum));
+        try!(packet.write_u16(1));
 
-pub fn read(&mut self, packet: &mut DnsPacket) -> Result<()> {
-    let _ = packet.read_qname(&mut self.name, false);
-    self.qtype = QueryType::from_num(try!(packet.read_u16())); // qtype
-    let _ = packet.read_u16(); // class
+        Ok(())
+    }
 
-    Ok(())
-}
+    pub fn read<T: PacketBuffer>(&mut self, packet: &mut DnsPacket<T>) -> Result<()> {
+        let _ = packet.read_qname(&mut self.name, false);
+        self.qtype = QueryType::from_num(try!(packet.read_u16())); // qtype
+        let _ = packet.read_u16(); // class
+
+        Ok(())
+    }
 }
 
 impl fmt::Display for DnsQuestion {
-fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    try!(write!(f, "DnsQuestion:\n"));
-    try!(write!(f, "\tname: {0}\n", self.name));
-    try!(write!(f, "\trecord type: {:?}\n", self.qtype));
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        try!(write!(f, "DnsQuestion:\n"));
+        try!(write!(f, "\tname: {0}\n", self.name));
+        try!(write!(f, "\trecord type: {:?}\n", self.qtype));
 
-    Ok(())
-}
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -497,67 +525,249 @@ impl QueryResult {
     }
 }
 
-pub struct DnsPacket {
+pub trait PacketBuffer {
+    fn read(&mut self) -> Result<u8>;
+    fn get(&mut self, pos: usize) -> Result<u8>;
+    fn get_range(&mut self, start: usize, len: usize) -> Result<&[u8]>;
+    fn write(&mut self, val: u8) -> Result<()>;
+    fn pos(&self) -> usize;
+    fn seek(&mut self, pos: usize) -> Result<()>;
+    fn step(&mut self, steps: usize) -> Result<()>;
+}
+
+pub struct VectorPacketBuffer {
+    pub buffer: Vec<u8>,
+    pub pos: usize
+}
+
+impl VectorPacketBuffer {
+    pub fn new() -> VectorPacketBuffer {
+        VectorPacketBuffer {
+            buffer: Vec::new(),
+            pos: 0
+        }
+    }
+}
+
+impl PacketBuffer for VectorPacketBuffer {
+    fn read(&mut self) -> Result<u8> {
+        let res = self.buffer[self.pos];
+        self.pos += 1;
+
+        Ok(res)
+    }
+
+    fn get(&mut self, pos: usize) -> Result<u8> {
+        Ok(self.buffer[pos])
+    }
+
+    fn get_range(&mut self, start: usize, len: usize) -> Result<&[u8]> {
+        Ok(&self.buffer[start..start+len as usize])
+    }
+
+    fn write(&mut self, val: u8) -> Result<()> {
+        self.buffer.push(val);
+        self.pos += 1;
+
+        Ok(())
+    }
+
+    fn pos(&self) -> usize {
+        self.pos
+    }
+
+    fn seek(&mut self, pos: usize) -> Result<()> {
+        self.pos = pos;
+
+        Ok(())
+    }
+
+    fn step(&mut self, steps: usize) -> Result<()> {
+        self.pos += steps;
+
+        Ok(())
+    }
+}
+
+pub struct StreamPacketBuffer<'a, T> where T: Read + 'a {
+    pub stream: &'a mut T,
+    pub buffer: Vec<u8>,
+    pub pos: usize
+}
+
+impl<'a, T> StreamPacketBuffer<'a, T> where T: Read + 'a {
+    pub fn new(stream: &'a mut T) -> StreamPacketBuffer<T> {
+        StreamPacketBuffer {
+            stream: stream,
+            buffer: Vec::new(),
+            pos: 0
+        }
+    }
+}
+
+impl<'a, T> PacketBuffer for StreamPacketBuffer<'a, T> where T: Read + 'a {
+    fn read(&mut self) -> Result<u8> {
+        while self.pos >= self.buffer.len() {
+            let mut local_buffer = [0; 1];
+            try!(self.stream.read(&mut local_buffer));
+            self.buffer.push(local_buffer[0]);
+        }
+
+        let res = self.buffer[self.pos];
+        self.pos += 1;
+
+        Ok(res)
+    }
+
+    fn get(&mut self, pos: usize) -> Result<u8> {
+        while pos >= self.buffer.len() {
+            let mut local_buffer = [0; 1];
+            try!(self.stream.read(&mut local_buffer));
+            self.buffer.push(local_buffer[0]);
+        }
+
+        Ok(self.buffer[pos])
+    }
+
+    fn get_range(&mut self, start: usize, len: usize) -> Result<&[u8]> {
+        while start+len >= self.buffer.len() {
+            let mut local_buffer = [0; 1];
+            try!(self.stream.read(&mut local_buffer));
+            self.buffer.push(local_buffer[0]);
+        }
+
+        Ok(&self.buffer[start..start+len as usize])
+    }
+
+    fn write(&mut self, val: u8) -> Result<()> {
+        Ok(())
+    }
+
+    fn pos(&self) -> usize {
+        self.pos
+    }
+
+    fn seek(&mut self, pos: usize) -> Result<()> {
+        self.pos = pos;
+        Ok(())
+    }
+
+    fn step(&mut self, steps: usize) -> Result<()> {
+        self.pos += steps;
+        Ok(())
+    }
+}
+
+pub struct BytePacketBuffer {
     pub buf: [u8; 512],
     pub pos: usize
 }
 
-impl DnsPacket {
-pub fn new() -> DnsPacket {
-        DnsPacket {
+impl BytePacketBuffer {
+    pub fn new() -> BytePacketBuffer {
+        BytePacketBuffer {
             buf: [0; 512],
             pos: 0
         }
     }
+}
 
-    pub fn read_u16(&mut self) -> Result<u16>
-    {
-        if self.pos+1 >= self.buf.len() {
-            return Err(Error::new(ErrorKind::InvalidInput, "End of buffer"));
-        }
-
-        let res = ((self.buf[self.pos] as u16) << 8) |
-                  (self.buf[self.pos+1] as u16);
-        self.pos += 2;
+impl PacketBuffer for BytePacketBuffer {
+    fn read(&mut self) -> Result<u8> {
+        let res = self.buf[self.pos];
+        self.pos += 1;
 
         Ok(res)
     }
 
-    pub fn read_u32(&mut self) -> Result<u32>
-    {
-        if self.pos+3 >= self.buf.len() {
-            return Err(Error::new(ErrorKind::InvalidInput, "End of buffer"));
-        }
+    fn get(&mut self, pos: usize) -> Result<u8> {
+        Ok(self.buf[pos])
+    }
 
-        let res = ((self.buf[self.pos+3] as u32) << 0) |
-                  ((self.buf[self.pos+2] as u32) << 8) |
-                  ((self.buf[self.pos+1] as u32) << 16) |
-                  ((self.buf[self.pos+0] as u32) << 24);
-        self.pos += 4;
+    fn get_range(&mut self, start: usize, len: usize) -> Result<&[u8]> {
+        Ok(&self.buf[start..start+len as usize])
+    }
+
+    fn write(&mut self, val: u8) -> Result<()> {
+        self.buf[self.pos] = val;
+        self.pos += 1;
+        Ok(())
+    }
+
+    fn pos(&self) -> usize {
+        self.pos
+    }
+
+    fn seek(&mut self, pos: usize) -> Result<()> {
+        self.pos = pos;
+
+        Ok(())
+    }
+
+    fn step(&mut self, steps: usize) -> Result<()> {
+        self.pos += steps;
+
+        Ok(())
+    }
+}
+
+pub struct DnsPacket<'a, T> where T: 'a + PacketBuffer {
+    pub buffer: &'a mut T
+}
+
+impl<'a, T> DnsPacket<'a, T> where T: 'a + PacketBuffer {
+    pub fn new(buffer: &'a mut T) -> DnsPacket<T> {
+        DnsPacket {
+            buffer: buffer
+        }
+    }
+
+    fn read_u16(&mut self) -> Result<u16>
+    {
+        //if self.pos+1 >= self.buf.len() {
+        //    return Err(Error::new(ErrorKind::InvalidInput, "End of buffer"));
+        //}
+
+        let res = ((try!(self.buffer.read()) as u16) << 8) |
+                  (try!(self.buffer.read()) as u16);
 
         Ok(res)
     }
 
-    pub fn read_qname(&mut self, outstr: &mut String, nomove: bool) -> Result<()>
+    fn read_u32(&mut self) -> Result<u32>
     {
-        let mut pos = self.pos;
+        //if self.pos+3 >= self.buf.len() {
+        //    return Err(Error::new(ErrorKind::InvalidInput, "End of buffer"));
+        //}
+
+        let res = ((try!(self.buffer.read()) as u32) << 24) |
+                  ((try!(self.buffer.read()) as u32) << 16) |
+                  ((try!(self.buffer.read()) as u32) << 8) |
+                  ((try!(self.buffer.read()) as u32) << 0);
+
+        Ok(res)
+    }
+
+    fn read_qname(&mut self, outstr: &mut String, nomove: bool) -> Result<()>
+    {
+        let mut pos = self.buffer.pos();
         let mut jumped = false;
 
         let mut delim = "";
         loop {
-            if pos >= self.buf.len() {
-                return Err(Error::new(ErrorKind::InvalidInput, "End of buffer"));
-            }
+            //if pos >= self.buf.len() {
+            //    return Err(Error::new(ErrorKind::InvalidInput, "End of buffer"));
+            //}
 
-            let len = self.buf[pos] as u8;
+            let len = try!(self.buffer.get(pos));
 
             // A two byte sequence, where the two highest bits of the first byte is
             // set, represents a offset relative to the start of the buffer. We
             // handle this by jumping to the offset, setting a flag to indicate
             // that we only need to update the global position by two bytes.
             if (len & 0xC0) > 0 {
-                let offset = (((len as u16) ^ 0xC0) << 8) |
-                             (self.buf[pos+1] as u16);
+                let b2 = try!(self.buffer.get(pos+1)) as u16;
+                let offset = (((len as u16) ^ 0xC0) << 8) | b2;
                 pos = offset as usize;
                 jumped = true;
                 continue;
@@ -569,12 +779,12 @@ pub fn new() -> DnsPacket {
                 break;
             }
 
-            if pos+len as usize >= self.buf.len() {
-                return Err(Error::new(ErrorKind::InvalidInput, "End of buffer"));
-            }
+            //if pos+len as usize >= self.buf.len() {
+            //    return Err(Error::new(ErrorKind::InvalidInput, "End of buffer"));
+            //}
 
             outstr.push_str(delim);
-            outstr.push_str(&String::from_utf8_lossy(&self.buf[pos..pos+len as usize]));
+            outstr.push_str(&String::from_utf8_lossy(try!(self.buffer.get_range(pos, len as usize))));
             delim = ".";
 
             pos += len as usize;
@@ -585,15 +795,15 @@ pub fn new() -> DnsPacket {
         }
 
         if jumped {
-            self.pos += 2;
+            try!(self.buffer.step(2));
         } else {
-            self.pos = pos;
+            try!(self.buffer.seek(pos));
         }
 
         Ok(())
     }
 
-    pub fn read_records(&mut self,
+    fn read_records(&mut self,
                         count: u16,
                         result: &mut Vec<ResourceRecord>) -> Result<()> {
         for _ in 0..count {
@@ -604,32 +814,33 @@ pub fn new() -> DnsPacket {
         Ok(())
     }
 
-    pub fn write_u8(&mut self, val: u8) -> Result<()> {
-        self.buf[self.pos] = val;
-        self.pos += 1;
+    fn write_u8(&mut self, val: u8) -> Result<()> {
+        try!(self.buffer.write(val));
 
         Ok(())
     }
 
-    pub fn write_u16(&mut self, val: u16) -> Result<()> {
-        self.buf[self.pos] = (val >> 8) as u8;
-        self.buf[self.pos+1] = (val & 0xFF) as u8;
-        self.pos += 2;
+    fn write_u16(&mut self, val: u16) -> Result<()> {
+        try!(self.buffer.write((val >> 8) as u8));
+        try!(self.buffer.write((val & 0xFF) as u8));
 
         Ok(())
     }
 
-    pub fn write_u32(&mut self, val: u32) -> Result<()> {
-        self.buf[self.pos+0] = ((val >> 24) & 0xFF) as u8;
-        self.buf[self.pos+1] = ((val >> 16) & 0xFF) as u8;
-        self.buf[self.pos+2] = ((val >> 8) & 0xFF) as u8;
-        self.buf[self.pos+3] = ((val >> 0) & 0xFF) as u8;
-        self.pos += 4;
+    fn write_u32(&mut self, val: u32) -> Result<()> {
+        try!(self.buffer.write(((val >> 24) & 0xFF) as u8));
+        try!(self.buffer.write(((val >> 16) & 0xFF) as u8));
+        try!(self.buffer.write(((val >> 8) & 0xFF) as u8));
+        try!(self.buffer.write(((val >> 0) & 0xFF) as u8));
 
         Ok(())
     }
 
-    pub fn write_qname(&mut self, qname: &String) -> Result<()> {
+    fn qname_len(&self, qname: &String) -> usize {
+        qname.split(".").map(|x| x.len() + 1).fold(1, |x, y| x+y)
+    }
+
+    fn write_qname(&mut self, qname: &String) -> Result<()> {
 
         for label in qname.split(".") {
             let len = label.len();

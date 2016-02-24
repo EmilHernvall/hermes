@@ -85,6 +85,7 @@ impl Cache {
     pub fn lookup(&self,
                   qname: &String,
                   qtype: QueryType) -> Option<QueryResult> {
+
         let mut result = None;
 
         let mut qr = QueryResult::new(0, false);
@@ -115,9 +116,8 @@ impl Cache {
         result
     }
 
-    pub fn update(&mut self,
-                  records: &Vec<ResourceRecord>)
-    {
+    pub fn update(&mut self, records: &Vec<ResourceRecord>) {
+
         for rec in records {
             if let Some(ref domain) = rec.get_domain() {
                 if let Some(rs) = self.records.get_mut(domain) {

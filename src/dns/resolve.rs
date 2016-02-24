@@ -59,8 +59,7 @@ impl<'a> DnsResolver<'a> {
                 println!("got ns cache hit for {}", domain);
                 //qr.print();
 
-                let resolved_ns = qr.get_resolved_ns(&domain);
-                if let Some(new_ns) = resolved_ns {
+                if let Some(new_ns) = qr.get_resolved_ns(&domain) {
                     ns = new_ns.clone();
                     break;
                 }
@@ -88,8 +87,7 @@ impl<'a> DnsResolver<'a> {
 
             // Otherwise, try to find a new nameserver based on NS and a
             // corresponding A record in the additional section
-            let resolved_ns = response.get_resolved_ns(qname);
-            if let Some(new_ns) = resolved_ns {
+            if let Some(new_ns) = response.get_resolved_ns(qname) {
                 // If there is such a record, we can retry the loop with that NS
                 ns = new_ns.clone();
                 self.cache.update(&response.answers);
@@ -98,8 +96,7 @@ impl<'a> DnsResolver<'a> {
             }
             else {
                 // If not, we'll have to resolve the ip of a NS record
-                let unresolved_ns = response.get_unresolved_ns(qname);
-                if let Some(new_ns_name) = unresolved_ns {
+                if let Some(new_ns_name) = response.get_unresolved_ns(qname) {
 
                     // Recursively resolve the NS
                     let recursive_response = try!(self.resolve(&new_ns_name));

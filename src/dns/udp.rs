@@ -5,18 +5,17 @@ use dns::protocol::{DnsHeader,
                     QueryResult,
                     DnsQuestion,
                     DnsPacket,
+                    BytePacketBuffer,
                     QueryType};
 
 pub struct DnsUdpClient<'a> {
-    server: &'a str,
-    packet: DnsPacket
+    server: &'a str
 }
 
 impl<'a> DnsUdpClient<'a> {
     pub fn new(server: &'a str) -> DnsUdpClient {
         DnsUdpClient {
-            server: server,
-            packet: DnsPacket::new()
+            server: server
         }
     }
 
@@ -25,7 +24,8 @@ impl<'a> DnsUdpClient<'a> {
                       qtype: QueryType) -> Result<QueryResult> {
 
         // Prepare request
-        let mut req_packet = DnsPacket::new();
+        let mut req_buffer = BytePacketBuffer::new();
+        let mut req_packet = DnsPacket::new(&mut req_buffer);
 
         let mut head = DnsHeader::new();
         head.questions = 1;
@@ -36,13 +36,17 @@ impl<'a> DnsUdpClient<'a> {
 
         // Set up socket and send data
         let socket = try!(UdpSocket::bind("0.0.0.0:34254"));
-        try!(socket.send_to(&req_packet.buf[0..req_packet.pos], (self.server, 53)));
+        try!(socket.send_to(&req_packet.buffer.buf[0..req_packet.buffer.pos], (self.server, 53)));
 
         // Retrieve response
-        let _ = try!(socket.recv_from(&mut self.packet.buf));
+        let mut res_buffer = BytePacketBuffer::new();
+        {
+            let _ = try!(socket.recv_from(&mut res_buffer.buf));
+        };
 
         drop(socket);
 
-        self.packet.read()
+        let mut response_packet = DnsPacket::new(&mut res_buffer);
+        response_packet.read()
     }
 }
