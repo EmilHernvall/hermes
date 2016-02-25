@@ -2,7 +2,6 @@ use std::collections::{HashSet,HashMap};
 use std::hash::{Hash,Hasher};
 use std::sync::mpsc::{channel, Sender};
 use std::thread::spawn;
-use std::marker::{Send, Sync};
 
 use chrono::*;
 
