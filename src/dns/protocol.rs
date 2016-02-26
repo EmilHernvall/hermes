@@ -55,15 +55,13 @@ pub enum ResourceRecord {
 impl ResourceRecord {
     pub fn read<T: PacketBuffer>(packet: &mut DnsPacket<T>) -> Result<ResourceRecord> {
         let mut domain = String::new();
-        let _ = packet.read_qname(&mut domain, false);
+        let _ = try!(packet.read_qname(&mut domain));
 
         let qtype_num = try!(packet.read_u16());
         let qtype = QueryType::from_num(qtype_num);
         let _ = try!(packet.read_u16());
         let ttl = try!(packet.read_u32());
         let data_len = try!(packet.read_u16());
-
-        println!("reading {} bytes of {:?} ({})", data_len, qtype, qtype_num);
 
         match qtype {
             QueryType::A  => {
@@ -93,15 +91,13 @@ impl ResourceRecord {
             },
             QueryType::NS => {
                 let mut ns = String::new();
-                try!(packet.read_qname(&mut ns, true));
-                try!(packet.buffer.step(data_len as usize));
+                try!(packet.read_qname(&mut ns));
 
                 return Ok(ResourceRecord::NS(domain, ns, ttl));
             },
             QueryType::CNAME => {
                 let mut cname = String::new();
-                try!(packet.read_qname(&mut cname, true));
-                try!(packet.buffer.step(data_len as usize));
+                try!(packet.read_qname(&mut cname));
 
                 return Ok(ResourceRecord::CNAME(domain, cname, ttl));
             },
@@ -111,8 +107,7 @@ impl ResourceRecord {
                 let port = try!(packet.read_u16());
 
                 let mut srv = String::new();
-                let _ = packet.read_qname(&mut srv, true);
-                try!(packet.buffer.step(data_len as usize));
+                let _ = packet.read_qname(&mut srv);
 
                 return Ok(ResourceRecord::SRV(domain,
                                            priority,
@@ -122,11 +117,9 @@ impl ResourceRecord {
                                            ttl));
             },
             QueryType::MX => {
-                let newpos = packet.buffer.pos() + data_len as usize;
                 let priority = try!(packet.read_u16());
                 let mut mx = String::new();
-                try!(packet.read_qname(&mut mx, false));
-                try!(packet.buffer.seek(newpos));
+                try!(packet.read_qname(&mut mx));
 
                 return Ok(ResourceRecord::MX(domain, priority, mx, ttl));
             },
@@ -429,7 +422,7 @@ impl DnsQuestion {
     }
 
     pub fn read<T: PacketBuffer>(&mut self, packet: &mut DnsPacket<T>) -> Result<()> {
-        let _ = packet.read_qname(&mut self.name, false);
+        let _ = packet.read_qname(&mut self.name);
         self.qtype = QueryType::from_num(try!(packet.read_u16())); // qtype
         let _ = packet.read_u16(); // class
 
@@ -506,7 +499,7 @@ impl QueryResult {
         let mut new_authorities = Vec::new();
         for auth in &self.authorities {
             if let ResourceRecord::NS(ref suffix, ref host, _) = *auth {
-                if !qname.ends_with(suffix) {
+                if !qname.to_lowercase().ends_with(&suffix.to_lowercase()) {
                     continue;
                 }
 
@@ -538,7 +531,7 @@ impl QueryResult {
         let mut new_authorities = Vec::new();
         for auth in &self.authorities {
             if let ResourceRecord::NS(ref suffix, ref host, _) = *auth {
-                if !qname.ends_with(suffix) {
+                if !qname.to_lowercase().ends_with(&suffix.to_lowercase()) {
                     continue;
                 }
 
@@ -592,7 +585,7 @@ impl<'a, T> DnsPacket<'a, T> where T: 'a + PacketBuffer {
         Ok(res)
     }
 
-    fn read_qname(&mut self, outstr: &mut String, nomove: bool) -> Result<()>
+    fn read_qname(&mut self, outstr: &mut String) -> Result<()>
     {
         let mut pos = self.buffer.pos();
         let mut jumped = false;
@@ -610,6 +603,9 @@ impl<'a, T> DnsPacket<'a, T> where T: 'a + PacketBuffer {
             // handle this by jumping to the offset, setting a flag to indicate
             // that we only need to update the global position by two bytes.
             if (len & 0xC0) > 0 {
+                if !jumped {
+                    try!(self.buffer.seek(pos+2));
+                }
                 let b2 = try!(self.buffer.get(pos+1)) as u16;
                 let offset = (((len as u16) ^ 0xC0) << 8) | b2;
                 pos = offset as usize;
@@ -634,13 +630,7 @@ impl<'a, T> DnsPacket<'a, T> where T: 'a + PacketBuffer {
             pos += len as usize;
         }
 
-        if nomove {
-            return Ok(());
-        }
-
-        if jumped {
-            try!(self.buffer.step(2));
-        } else {
+        if !jumped {
             try!(self.buffer.seek(pos));
         }
 
@@ -652,7 +642,6 @@ impl<'a, T> DnsPacket<'a, T> where T: 'a + PacketBuffer {
                         result: &mut Vec<ResourceRecord>) -> Result<()> {
         for _ in 0..count {
             let rec = try!(ResourceRecord::read(self));
-            println!("read record");
             result.push(rec);
         }
 
@@ -704,15 +693,12 @@ impl<'a, T> DnsPacket<'a, T> where T: 'a + PacketBuffer {
         let mut header = DnsHeader::new();
         try!(header.read(self));
 
-        println!("{}", header);
-
         let mut result = QueryResult::new(header.id, header.authoritative_answer);
 
         for _ in 0..header.questions {
             let mut question = DnsQuestion::new(&"".to_string(),
                                                 QueryType::UNKNOWN);
             try!(question.read(self));
-            println!("{}", question);
             result.questions.push(question);
         }
 

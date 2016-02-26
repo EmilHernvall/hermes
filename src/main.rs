@@ -19,7 +19,7 @@ use dns::protocol::QueryType;
 fn main() {
 
     let client = Arc::new(DnsUdpClient::new());
-    client.run();
+    client.run().unwrap();
 
     let mut cache = SynchronizedCache::new();
     cache.run();

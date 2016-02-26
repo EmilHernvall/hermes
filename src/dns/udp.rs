@@ -5,6 +5,7 @@ use std::sync::mpsc::{channel, Sender};
 use std::thread::spawn;
 use std::io::{Error, ErrorKind};
 use std::marker::{Send, Sync};
+use std::cell::Cell;
 
 use dns::resolve::DnsResolver;
 use dns::cache::SynchronizedCache;
@@ -69,7 +70,7 @@ pub struct PendingQuery {
 }
 
 pub struct DnsUdpClient {
-    pub seq: u16,
+    pub seq: Mutex<Cell<u16>>,
     pub socket: UdpSocket,
     pub pending_queries: Arc<Mutex<Vec<PendingQuery>>>
 }
@@ -79,7 +80,7 @@ impl DnsUdpClient {
     pub fn new() -> DnsUdpClient {
         println!("New DnsUdpClient");
         DnsUdpClient {
-            seq: 0,
+            seq: Mutex::new(Cell::new(0)),
             socket: UdpSocket::bind(("0.0.0.0", 34254)).unwrap(),
             pending_queries: Arc::new(Mutex::new(Vec::new()))
         }
@@ -94,20 +95,22 @@ impl DnsUdpClient {
             loop {
                 let mut res_buffer = BytePacketBuffer::new();
                 {
-                    if let Err(_) = socket_copy.recv_from(&mut res_buffer.buf) {
-                        println!("receive error");
-                        continue;
+                    match socket_copy.recv_from(&mut res_buffer.buf) {
+                        Ok(_) => {
+                            //println!("received {:?} bytes", bytes);
+                        },
+                        Err(_) => {
+                            //println!("receive error");
+                            continue;
+                        }
                     }
-                    println!("receive ok");
                 };
 
                 let mut response_packet = DnsPacket::new(&mut res_buffer);
                 match response_packet.read() {
                     Ok(query_result) => {
-                        println!("got queryresult");
 
                         if let Ok(mut pending_queries) = pending_queries_lock.lock() {
-                            println!("acquired lock");
                             let mut matched_query = None;
                             for (i, pending_query) in pending_queries.iter().enumerate() {
                                 if pending_query.seq == query_result.id {
@@ -146,7 +149,10 @@ impl DnsClient for DnsUdpClient {
         let mut req_packet = DnsPacket::new(&mut req_buffer);
 
         let mut head = DnsHeader::new();
-        head.id = self.seq;
+        if let Ok(seq_cell) = self.seq.lock() {
+            head.id = seq_cell.get();
+            seq_cell.set(head.id+1);
+        }
         head.questions = 1;
         try!(head.write(&mut req_packet));
 
