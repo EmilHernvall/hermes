@@ -5,6 +5,7 @@ use dns::resolve::DnsResolver;
 use dns::cache::SynchronizedCache;
 //use dns::network::{DnsClient, DnsServer};
 use dns::network::DnsServer;
+use dns::udp::DnsUdpClient;
 use dns::protocol::{DnsHeader, DnsPacket};
 
 use dns::buffer::{PacketBuffer, StreamPacketBuffer, VectorPacketBuffer};
@@ -22,13 +23,17 @@ impl<'a> DnsTcpClient<'a> {
 }*/
 
 pub struct DnsTcpServer<'a> {
+    client: &'a DnsUdpClient,
     cache: &'a SynchronizedCache,
     port: u16
 }
 
 impl<'a> DnsTcpServer<'a> {
-    pub fn new(cache: &SynchronizedCache, port: u16) -> DnsTcpServer {
+    pub fn new(client: &'a DnsUdpClient,
+               cache: &'a SynchronizedCache,
+               port: u16) -> DnsTcpServer<'a> {
         DnsTcpServer {
+            client: client,
             cache: cache,
             port: port
         }
@@ -51,8 +56,9 @@ impl<'a> DnsTcpServer<'a> {
             let mut results = Vec::new();
             for question in &request.questions {
                 println!("{}", question);
-                let mut resolver = DnsResolver::new(self.cache);
-                if let Ok(result) = resolver.resolve(&question.name) {
+                let mut resolver = DnsResolver::new(self.client, self.cache);
+                if let Ok(result) = resolver.resolve(&question.name,
+                                                     question.qtype.clone()) {
                     results.push(result);
                 }
             }

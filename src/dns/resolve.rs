@@ -10,11 +10,14 @@ use dns::cache::SynchronizedCache;
 
 pub struct DnsResolver<'a> {
     rootservers: Vec<&'a str>,
+    client: &'a DnsUdpClient,
     cache: &'a SynchronizedCache
 }
 
 impl<'a> DnsResolver<'a> {
-    pub fn new(cache: &'a SynchronizedCache) -> DnsResolver<'a> {
+    pub fn new(client: &'a DnsUdpClient,
+               cache: &'a SynchronizedCache) -> DnsResolver<'a> {
+
         DnsResolver {
             rootservers: vec![ "198.41.0.4",
                                "192.228.79.201",
@@ -29,13 +32,16 @@ impl<'a> DnsResolver<'a> {
                                "193.0.14.129",
                                "199.7.83.42",
                                "202.12.27.33" ],
+            client: client,
             cache: cache
         }
     }
 
-    pub fn resolve(&mut self, qname: &String) -> Result<QueryResult> {
+    pub fn resolve(&mut self,
+                   qname: &String,
+                   qtype: QueryType) -> Result<QueryResult> {
 
-        if let Some(qr) = self.cache.lookup(qname.clone(), QueryType::A) {
+        if let Some(qr) = self.cache.lookup(qname.clone(), qtype.clone()) {
             println!("got A cache hit for {}", qname);
             return Ok(qr);
         }
@@ -72,9 +78,10 @@ impl<'a> DnsResolver<'a> {
             println!("attempting lookup of {} with ns {}", qname, ns);
 
             let ns_copy = ns.clone();
-            let mut resolver = DnsUdpClient::new(&ns_copy);
             println!("sending ns query for {} using {}", qname, ns);
-            let response = try!(resolver.send_query(qname, QueryType::A));
+
+            let server = (&*ns_copy, 53);
+            let response = try!(self.client.send_query(qname, qtype.clone(), server));
             //response.print();
 
             // If we've got an actual answer, we're done!
@@ -100,7 +107,7 @@ impl<'a> DnsResolver<'a> {
                 if let Some(new_ns_name) = response.get_unresolved_ns(qname) {
 
                     // Recursively resolve the NS
-                    let recursive_response = try!(self.resolve(&new_ns_name));
+                    let recursive_response = try!(self.resolve(&new_ns_name, QueryType::A));
 
                     // Pick a random IP and restart
                     if let Some(new_ns) = recursive_response.get_random_a() {

@@ -1,4 +1,5 @@
 use std::io::{Result, Read};
+use std::io::{Error, ErrorKind};
 
 pub trait PacketBuffer {
     fn read(&mut self) -> Result<u8>;
@@ -149,6 +150,9 @@ impl BytePacketBuffer {
 
 impl PacketBuffer for BytePacketBuffer {
     fn read(&mut self) -> Result<u8> {
+        if self.pos >= 512 {
+            return Err(Error::new(ErrorKind::InvalidInput, "End of buffer"));
+        }
         let res = self.buf[self.pos];
         self.pos += 1;
 
@@ -156,14 +160,23 @@ impl PacketBuffer for BytePacketBuffer {
     }
 
     fn get(&mut self, pos: usize) -> Result<u8> {
+        if pos >= 512 {
+            return Err(Error::new(ErrorKind::InvalidInput, "End of buffer"));
+        }
         Ok(self.buf[pos])
     }
 
     fn get_range(&mut self, start: usize, len: usize) -> Result<&[u8]> {
+        if start + len >= 512 {
+            return Err(Error::new(ErrorKind::InvalidInput, "End of buffer"));
+        }
         Ok(&self.buf[start..start+len as usize])
     }
 
     fn write(&mut self, val: u8) -> Result<()> {
+        if self.pos >= 512 {
+            return Err(Error::new(ErrorKind::InvalidInput, "End of buffer"));
+        }
         self.buf[self.pos] = val;
         self.pos += 1;
         Ok(())

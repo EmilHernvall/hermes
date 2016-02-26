@@ -1,7 +1,7 @@
 use std::fmt;
 use std::net::{Ipv4Addr,Ipv6Addr};
 use std::io::{Result, Read};
-use std::io::{Error, ErrorKind};
+//use std::io::{Error, ErrorKind};
 use rand::random;
 
 use dns::buffer::PacketBuffer;
@@ -57,83 +57,87 @@ impl ResourceRecord {
         let mut domain = String::new();
         let _ = packet.read_qname(&mut domain, false);
 
-        let qtype = QueryType::from_num(try!(packet.read_u16()));
+        let qtype_num = try!(packet.read_u16());
+        let qtype = QueryType::from_num(qtype_num);
         let _ = try!(packet.read_u16());
         let ttl = try!(packet.read_u32());
         let data_len = try!(packet.read_u16());
 
-        if qtype == QueryType::A {
-            let raw_addr = try!(packet.read_u32());
-            let addr = Ipv4Addr::new(((raw_addr >> 24) & 0xFF) as u8,
-                                     ((raw_addr >> 16) & 0xFF) as u8,
-                                     ((raw_addr >> 8) & 0xFF) as u8,
-                                     ((raw_addr >> 0) & 0xFF) as u8);
+        println!("reading {} bytes of {:?} ({})", data_len, qtype, qtype_num);
 
-            return Ok(ResourceRecord::A(domain, addr, ttl));
-        }
-        else if qtype == QueryType::AAAA {
-            let raw_addr1 = try!(packet.read_u32());
-            let raw_addr2 = try!(packet.read_u32());
-            let raw_addr3 = try!(packet.read_u32());
-            let raw_addr4 = try!(packet.read_u32());
-            let addr = Ipv6Addr::new(((raw_addr1 >> 16) & 0xFFFF) as u16,
-                                     ((raw_addr1 >> 0) & 0xFFFF) as u16,
-                                     ((raw_addr2 >> 16) & 0xFFFF) as u16,
-                                     ((raw_addr2 >> 0) & 0xFFFF) as u16,
-                                     ((raw_addr3 >> 16) & 0xFFFF) as u16,
-                                     ((raw_addr3 >> 0) & 0xFFFF) as u16,
-                                     ((raw_addr4 >> 16) & 0xFFFF) as u16,
-                                     ((raw_addr4 >> 0) & 0xFFFF) as u16);
+        match qtype {
+            QueryType::A  => {
+                let raw_addr = try!(packet.read_u32());
+                let addr = Ipv4Addr::new(((raw_addr >> 24) & 0xFF) as u8,
+                                         ((raw_addr >> 16) & 0xFF) as u8,
+                                         ((raw_addr >> 8) & 0xFF) as u8,
+                                         ((raw_addr >> 0) & 0xFF) as u8);
 
-            return Ok(ResourceRecord::AAAA(domain, addr, ttl));
-        }
-        else if qtype == QueryType::NS {
-            let mut ns = String::new();
-            try!(packet.read_qname(&mut ns, true));
-            try!(packet.buffer.step(data_len as usize));
+                return Ok(ResourceRecord::A(domain, addr, ttl));
+            },
+            QueryType::AAAA => {
+                let raw_addr1 = try!(packet.read_u32());
+                let raw_addr2 = try!(packet.read_u32());
+                let raw_addr3 = try!(packet.read_u32());
+                let raw_addr4 = try!(packet.read_u32());
+                let addr = Ipv6Addr::new(((raw_addr1 >> 16) & 0xFFFF) as u16,
+                                         ((raw_addr1 >> 0) & 0xFFFF) as u16,
+                                         ((raw_addr2 >> 16) & 0xFFFF) as u16,
+                                         ((raw_addr2 >> 0) & 0xFFFF) as u16,
+                                         ((raw_addr3 >> 16) & 0xFFFF) as u16,
+                                         ((raw_addr3 >> 0) & 0xFFFF) as u16,
+                                         ((raw_addr4 >> 16) & 0xFFFF) as u16,
+                                         ((raw_addr4 >> 0) & 0xFFFF) as u16);
 
-            return Ok(ResourceRecord::NS(domain, ns, ttl));
-        }
-        else if qtype == QueryType::CNAME {
-            let mut cname = String::new();
-            try!(packet.read_qname(&mut cname, true));
-            try!(packet.buffer.step(data_len as usize));
+                return Ok(ResourceRecord::AAAA(domain, addr, ttl));
+            },
+            QueryType::NS => {
+                let mut ns = String::new();
+                try!(packet.read_qname(&mut ns, true));
+                try!(packet.buffer.step(data_len as usize));
 
-            return Ok(ResourceRecord::CNAME(domain, cname, ttl));
-        }
-        else if qtype == QueryType::SRV {
-            let priority = try!(packet.read_u16());
-            let weight = try!(packet.read_u16());
-            let port = try!(packet.read_u16());
+                return Ok(ResourceRecord::NS(domain, ns, ttl));
+            },
+            QueryType::CNAME => {
+                let mut cname = String::new();
+                try!(packet.read_qname(&mut cname, true));
+                try!(packet.buffer.step(data_len as usize));
 
-            let mut srv = String::new();
-            let _ = packet.read_qname(&mut srv, true);
-            try!(packet.buffer.step(data_len as usize));
+                return Ok(ResourceRecord::CNAME(domain, cname, ttl));
+            },
+            QueryType::SRV => {
+                let priority = try!(packet.read_u16());
+                let weight = try!(packet.read_u16());
+                let port = try!(packet.read_u16());
 
-            return Ok(ResourceRecord::SRV(domain,
-                                       priority,
-                                       weight,
-                                       port,
-                                       srv,
-                                       ttl));
-        }
-        else if qtype == QueryType::MX {
-            let newpos = packet.buffer.pos() + data_len as usize;
-            let priority = try!(packet.read_u16());
-            let mut mx = String::new();
-            try!(packet.read_qname(&mut mx, false));
-            try!(packet.buffer.seek(newpos));
+                let mut srv = String::new();
+                let _ = packet.read_qname(&mut srv, true);
+                try!(packet.buffer.step(data_len as usize));
 
-            return Ok(ResourceRecord::MX(domain, priority, mx, ttl));
-        }
-        else {
-            //packet.pos += data_len as usize;
-            try!(packet.buffer.step(data_len as usize));
+                return Ok(ResourceRecord::SRV(domain,
+                                           priority,
+                                           weight,
+                                           port,
+                                           srv,
+                                           ttl));
+            },
+            QueryType::MX => {
+                let newpos = packet.buffer.pos() + data_len as usize;
+                let priority = try!(packet.read_u16());
+                let mut mx = String::new();
+                try!(packet.read_qname(&mut mx, false));
+                try!(packet.buffer.seek(newpos));
 
-            return Ok(ResourceRecord::UNKNOWN(domain,
-                                              qtype as u16,
-                                              data_len,
-                                              ttl));
+                return Ok(ResourceRecord::MX(domain, priority, mx, ttl));
+            },
+            _ => {
+                try!(packet.buffer.step(data_len as usize));
+
+                return Ok(ResourceRecord::UNKNOWN(domain,
+                                                  qtype as u16,
+                                                  data_len,
+                                                  ttl));
+            }
         }
     }
 
@@ -154,10 +158,26 @@ impl ResourceRecord {
                 try!(packet.write_u8(octets[2]));
                 try!(packet.write_u8(octets[3]));
             },
-            //ResourceRecord::AAAA(ref host, ref addr, ttl) => {
-            //},
-            //ResourceRecord::NS(ref domain, ref addr, ttl) => {
-            //},
+            ResourceRecord::AAAA(ref host, ref addr, ttl) => {
+                try!(packet.write_qname(host));
+                try!(packet.write_u16(QueryType::AAAA as u16));
+                try!(packet.write_u16(1));
+                try!(packet.write_u32(ttl));
+                try!(packet.write_u16(16));
+
+                for octet in addr.segments().iter() {
+                    try!(packet.write_u16(*octet));
+                }
+            },
+            ResourceRecord::NS(ref domain, ref host, ttl) => {
+                try!(packet.write_qname(domain));
+                try!(packet.write_u16(QueryType::NS as u16));
+                try!(packet.write_u16(1));
+                try!(packet.write_u32(ttl));
+                try!(packet.write_u16(host.len() as u16 + 2));
+
+                try!(packet.write_qname(host));
+            },
             ResourceRecord::CNAME(ref domain, ref addr, ttl) => {
                 try!(packet.write_qname(domain));
                 try!(packet.write_u16(QueryType::CNAME as u16));
@@ -169,8 +189,16 @@ impl ResourceRecord {
             },
             //ResourceRecord::SRV(ref domain, priority, weight, port, ref srv, ttl) => {
             //},
-            //ResourceRecord::MX(ref domain, priority, ref mx, ttl) => {
-            //},
+            ResourceRecord::MX(ref domain, priority, ref mx, ttl) => {
+                try!(packet.write_qname(domain));
+                try!(packet.write_u16(QueryType::MX as u16));
+                try!(packet.write_u16(1));
+                try!(packet.write_u32(ttl));
+                try!(packet.write_u16(mx.len() as u16 + 4));
+
+                try!(packet.write_u16(priority));
+                try!(packet.write_qname(mx));
+            },
             _ => {
             }
         }
@@ -624,6 +652,7 @@ impl<'a, T> DnsPacket<'a, T> where T: 'a + PacketBuffer {
                         result: &mut Vec<ResourceRecord>) -> Result<()> {
         for _ in 0..count {
             let rec = try!(ResourceRecord::read(self));
+            println!("read record");
             result.push(rec);
         }
 
@@ -675,12 +704,15 @@ impl<'a, T> DnsPacket<'a, T> where T: 'a + PacketBuffer {
         let mut header = DnsHeader::new();
         try!(header.read(self));
 
+        println!("{}", header);
+
         let mut result = QueryResult::new(header.id, header.authoritative_answer);
 
         for _ in 0..header.questions {
             let mut question = DnsQuestion::new(&"".to_string(),
                                                 QueryType::UNKNOWN);
             try!(question.read(self));
+            println!("{}", question);
             result.questions.push(question);
         }
 

@@ -2,6 +2,7 @@ use std::collections::{HashSet,HashMap};
 use std::hash::{Hash,Hasher};
 use std::sync::mpsc::{channel, Sender};
 use std::thread::spawn;
+use std::clone::Clone;
 
 use chrono::*;
 
@@ -178,6 +179,7 @@ impl SynchronizedCache {
                 match req {
                     CacheRequest::Update(records) => {
                         cache.update(&records);
+                        let _ = res_tx.send(CacheResponse::UpdateOk);
                     },
                     CacheRequest::Query(qname, qtype) => {
                         let res = cache.lookup(&qname, qtype);

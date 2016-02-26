@@ -1,5 +1,10 @@
 use std::net::UdpSocket;
 use std::io::Result;
+use std::sync::{Arc, Mutex};
+use std::sync::mpsc::{channel, Sender};
+use std::thread::spawn;
+use std::io::{Error, ErrorKind};
+use std::marker::{Send, Sync};
 
 use dns::resolve::DnsResolver;
 use dns::cache::SynchronizedCache;
@@ -10,9 +15,9 @@ use dns::protocol::{DnsHeader,
                     DnsPacket,
                     QueryType};
 
-use dns::buffer::{PacketBuffer, BytePacketBuffer};
+use dns::buffer::{PacketBuffer, BytePacketBuffer, VectorPacketBuffer};
 
-pub struct DnsUdpClient<'a> {
+/*pub struct DnsUdpClient<'a> {
     server: &'a str
 }
 
@@ -34,6 +39,7 @@ impl<'a> DnsClient for DnsUdpClient<'a> {
         let mut req_packet = DnsPacket::new(&mut req_buffer);
 
         let mut head = DnsHeader::new();
+        head.id = 0;
         head.questions = 1;
         try!(head.write(&mut req_packet));
 
@@ -55,16 +61,129 @@ impl<'a> DnsClient for DnsUdpClient<'a> {
         let mut response_packet = DnsPacket::new(&mut res_buffer);
         response_packet.read()
     }
+}*/
+
+pub struct PendingQuery {
+    seq: u16,
+    tx: Sender<QueryResult>
+}
+
+pub struct DnsUdpClient {
+    pub seq: u16,
+    pub socket: UdpSocket,
+    pub pending_queries: Arc<Mutex<Vec<PendingQuery>>>
+}
+
+#[allow(dead_code)]
+impl DnsUdpClient {
+    pub fn new() -> DnsUdpClient {
+        println!("New DnsUdpClient");
+        DnsUdpClient {
+            seq: 0,
+            socket: UdpSocket::bind(("0.0.0.0", 34254)).unwrap(),
+            pending_queries: Arc::new(Mutex::new(Vec::new()))
+        }
+    }
+
+    pub fn run(&self) -> Result<()> {
+
+        let socket_copy = try!(self.socket.try_clone());
+        let pending_queries_lock = self.pending_queries.clone();
+
+        spawn(move || {
+            loop {
+                let mut res_buffer = BytePacketBuffer::new();
+                {
+                    if let Err(_) = socket_copy.recv_from(&mut res_buffer.buf) {
+                        println!("receive error");
+                        continue;
+                    }
+                    println!("receive ok");
+                };
+
+                let mut response_packet = DnsPacket::new(&mut res_buffer);
+                match response_packet.read() {
+                    Ok(query_result) => {
+                        println!("got queryresult");
+
+                        if let Ok(mut pending_queries) = pending_queries_lock.lock() {
+                            println!("acquired lock");
+                            let mut matched_query = None;
+                            for (i, pending_query) in pending_queries.iter().enumerate() {
+                                if pending_query.seq == query_result.id {
+                                    let _ = pending_query.tx.send(query_result.clone());
+                                    matched_query = Some(i);
+                                }
+                            }
+
+                            if let Some(idx) = matched_query {
+                                pending_queries.remove(idx);
+                            }
+                        }
+                    },
+                    Err(err) => {
+                        println!("Got error {}", err);
+                    }
+                }
+            }
+        });
+
+        Ok(())
+    }
+}
+
+unsafe impl Send for DnsUdpClient {}
+unsafe impl Sync for DnsUdpClient {}
+
+impl DnsClient for DnsUdpClient {
+    fn send_query(&self,
+                  qname: &String,
+                  qtype: QueryType,
+                  server: (&str, u16)) -> Result<QueryResult> {
+
+        // Prepare request
+        let mut req_buffer = BytePacketBuffer::new();
+        let mut req_packet = DnsPacket::new(&mut req_buffer);
+
+        let mut head = DnsHeader::new();
+        head.id = self.seq;
+        head.questions = 1;
+        try!(head.write(&mut req_packet));
+
+        let question = DnsQuestion::new(&qname, qtype);
+        try!(question.write(&mut req_packet));
+
+        let (tx, rx) = channel();
+        if let Ok(mut pending_queries) = self.pending_queries.lock() {
+            pending_queries.push(PendingQuery {
+                seq: head.id,
+                tx: tx
+            });
+
+            // Send query
+            try!(self.socket.send_to(&req_packet.buffer.buf[0..req_packet.buffer.pos], server));
+        }
+
+        if let Ok(qr) = rx.recv() {
+            return Ok(qr);
+        }
+
+        Err(Error::new(ErrorKind::InvalidInput, "Lookup failed"))
+    }
 }
 
 pub struct DnsUdpServer<'a> {
+    client: &'a DnsUdpClient,
     cache: &'a SynchronizedCache,
     port: u16
 }
 
 impl<'a> DnsUdpServer<'a> {
-    pub fn new(cache: &SynchronizedCache, port: u16) -> DnsUdpServer {
+    pub fn new(client: &'a DnsUdpClient,
+               cache: &'a SynchronizedCache,
+               port: u16) -> DnsUdpServer<'a> {
         DnsUdpServer {
+            client: client,
             cache: cache,
             port: port
         }
@@ -77,15 +196,17 @@ impl<'a> DnsUdpServer<'a> {
 
         let request = try!(packet.read());
 
-        let mut res_buffer = BytePacketBuffer::new();
-        let mut res_packet = DnsPacket::new(&mut res_buffer);
+        let mut res_buffer = VectorPacketBuffer::new();
 
         {
+            let mut res_packet = DnsPacket::new(&mut res_buffer);
+
             let mut results = Vec::new();
             for question in &request.questions {
                 println!("{}", question);
-                let mut resolver = DnsResolver::new(self.cache);
-                if let Ok(result) = resolver.resolve(&question.name) {
+                let mut resolver = DnsResolver::new(self.client, self.cache);
+                if let Ok(result) = resolver.resolve(&question.name,
+                                                     question.qtype.clone()) {
                     results.push(result);
                 }
             }
@@ -133,7 +254,9 @@ impl<'a> DnsUdpServer<'a> {
             }
         };
 
-        try!(socket.send_to(&res_packet.buffer.buf[0..res_packet.buffer.pos], src));
+        let len = res_buffer.pos();
+
+        try!(socket.send_to(try!(res_buffer.get_range(0, len)), src));
 
         Ok(())
     }

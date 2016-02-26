@@ -3,9 +3,10 @@ use std::io::Result;
 use dns::protocol::{QueryType, QueryResult};
 
 pub trait DnsClient {
-    fn send_query(&mut self,
+    fn send_query(&self,
                   qname: &String,
-                  qtype: QueryType) -> Result<QueryResult>;
+                  qtype: QueryType,
+                  server: (&str, u16)) -> Result<QueryResult>;
 }
 
 pub trait DnsServer {
