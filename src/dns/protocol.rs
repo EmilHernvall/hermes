@@ -592,20 +592,20 @@ impl<'a, T> DnsPacket<'a, T> where T: 'a + PacketBuffer {
 
         let mut delim = "";
         loop {
-            //if pos >= self.buf.len() {
-            //    return Err(Error::new(ErrorKind::InvalidInput, "End of buffer"));
-            //}
-
             let len = try!(self.buffer.get(pos));
 
             // A two byte sequence, where the two highest bits of the first byte is
             // set, represents a offset relative to the start of the buffer. We
             // handle this by jumping to the offset, setting a flag to indicate
-            // that we only need to update the global position by two bytes.
+            // that we shouldn't update the shared buffer position once done.
             if (len & 0xC0) > 0 {
+
+                // When a jump is performed, we only modify the shared buffer
+                // position once, and avoid making the change later on.
                 if !jumped {
                     try!(self.buffer.seek(pos+2));
                 }
+
                 let b2 = try!(self.buffer.get(pos+1)) as u16;
                 let offset = (((len as u16) ^ 0xC0) << 8) | b2;
                 pos = offset as usize;
@@ -615,13 +615,10 @@ impl<'a, T> DnsPacket<'a, T> where T: 'a + PacketBuffer {
 
             pos += 1;
 
+            // Names are terminated by an empty label of length 0
             if len == 0 {
                 break;
             }
-
-            //if pos+len as usize >= self.buf.len() {
-            //    return Err(Error::new(ErrorKind::InvalidInput, "End of buffer"));
-            //}
 
             outstr.push_str(delim);
             outstr.push_str(&String::from_utf8_lossy(try!(self.buffer.get_range(pos, len as usize))));
