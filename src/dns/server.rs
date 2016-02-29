@@ -18,8 +18,9 @@ pub fn resolve_cnames(lookup_list: &Vec<ResourceRecord>,
                                                   QueryType::A) {
 
                 let new_unmatched = result2.get_unresolved_cnames();
-                resolve_cnames(&new_unmatched, results, resolver);
                 results.push(result2);
+
+                resolve_cnames(&new_unmatched, results, resolver);
             }
         }
     }
@@ -34,23 +35,27 @@ pub fn build_response(request: &QueryResult,
 
     let mut results = Vec::new();
     for question in &request.questions {
-        println!("{}", question);
         if let Ok(result) = resolver.resolve(&question.name,
                                              question.qtype.clone()) {
 
             let unmatched = result.get_unresolved_cnames();
-            resolve_cnames(&unmatched, &mut results, resolver);
             results.push(result);
+
+            resolve_cnames(&unmatched, &mut results, resolver);
         }
     }
 
     let mut answers = Vec::new();
+    print!("Results for {:?} {}: ",
+           request.questions[0].qtype,
+           request.questions[0].name);
     for result in results {
         for answer in result.answers {
-            println!("{:?}", answer);
+            print!("{:?} ", answer);
             answers.push(answer);
         }
     }
+    println!("");
 
     let mut head = DnsHeader::new();
 

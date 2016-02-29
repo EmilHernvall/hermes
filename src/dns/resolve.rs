@@ -42,7 +42,7 @@ impl<'a> DnsResolver<'a> {
                    qtype: QueryType) -> Result<QueryResult> {
 
         if let Some(qr) = self.cache.lookup(qname.clone(), qtype.clone()) {
-            println!("got A cache hit for {}", qname);
+            //println!("got record cache hit for {}", qname);
             return Ok(qr);
         }
 
@@ -60,10 +60,8 @@ impl<'a> DnsResolver<'a> {
         for lbl_idx in 0..labels.len()+1 {
             let domain = labels[lbl_idx..labels.len()].join(".");
 
-            //println!("label: {}", domain);
-
             if let Some(qr) = self.cache.lookup(domain.clone(), QueryType::NS) {
-                println!("got ns cache hit for {}", domain);
+                //println!("got ns cache hit for {}", domain);
                 //qr.print();
 
                 if let Some(new_ns) = qr.get_resolved_ns(&domain) {
@@ -75,10 +73,9 @@ impl<'a> DnsResolver<'a> {
 
         // Start querying name servers
         loop {
-            println!("attempting lookup of {} with ns {}", qname, ns);
+            //println!("attempting lookup of {} with ns {}", qname, ns);
 
             let ns_copy = ns.clone();
-            println!("sending ns query for {} using {}", qname, ns);
 
             let server = (&*ns_copy, 53);
             let response = try!(self.client.send_query(qname, qtype.clone(), server));

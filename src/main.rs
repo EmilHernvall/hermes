@@ -43,7 +43,7 @@ fn main() {
     else {
         //println!("usage: ./resolve <domain>");
 
-        let port = 1053;
+        let port = 53;
 
         println!("Listening on port {}", port);
 

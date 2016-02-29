@@ -125,7 +125,7 @@ impl Cache {
             if let Some(ref domain) = rec.get_domain() {
                 if let Some(rs) = self.records.get_mut(domain) {
                     if rs.append_record(rec) {
-                        println!("new record for {}: {:?}", domain, rec);
+                        //println!("updating record for {}: {:?}", domain, rec);
                     }
                     continue;
                 }
@@ -134,7 +134,7 @@ impl Cache {
                 rs.append_record(rec);
                 self.records.insert(domain.clone(), rs);
 
-                println!("new record for {}: {:?}", domain, rec);
+                //println!("new record for {}: {:?}", domain, rec);
             }
         }
 
