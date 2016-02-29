@@ -179,13 +179,13 @@ impl DnsClient for DnsUdpClient {
 }
 
 pub struct DnsUdpServer<'a> {
-    client: &'a DnsUdpClient,
+    client: Arc<DnsUdpClient>,
     cache: &'a SynchronizedCache,
     port: u16
 }
 
 impl<'a> DnsUdpServer<'a> {
-    pub fn new(client: &'a DnsUdpClient,
+    pub fn new(client: Arc<DnsUdpClient>,
                cache: &'a SynchronizedCache,
                port: u16) -> DnsUdpServer<'a> {
         DnsUdpServer {
@@ -195,7 +195,9 @@ impl<'a> DnsUdpServer<'a> {
         }
     }
 
-    pub fn handle_request(&mut self, socket: &UdpSocket) -> Result<()> {
+    pub fn handle_request(socket: &UdpSocket,
+                          client: &DnsUdpClient,
+                          cache: &SynchronizedCache) -> Result<()> {
         let mut req_buffer = BytePacketBuffer::new();
         let mut packet = DnsPacket::new(&mut req_buffer);
         let (_, src) = try!(socket.recv_from(&mut packet.buffer.buf));
@@ -210,7 +212,7 @@ impl<'a> DnsUdpServer<'a> {
             let mut results = Vec::new();
             for question in &request.questions {
                 println!("{}", question);
-                let mut resolver = DnsResolver::new(self.client, self.cache);
+                let mut resolver = DnsResolver::new(client, cache);
                 if let Ok(result) = resolver.resolve(&question.name,
                                                      question.qtype.clone()) {
                     results.push(result);
@@ -277,11 +279,17 @@ impl<'a> DnsServer for DnsUdpServer<'a> {
 
         let socket = socket_attempt.unwrap();
         loop {
-            match self.handle_request(&socket) {
-                Ok(_) => {},
-                Err(err) => {
-                    println!("UDP request failed: {:?}", err);
-                }
+            if let Ok(socket_clone) = socket.try_clone() {
+                let client = self.client.clone();
+                let cache = self.cache.clone();
+                spawn(move || {
+                    match DnsUdpServer::handle_request(&socket_clone, &client, &cache) {
+                        Ok(_) => {},
+                        Err(err) => {
+                            println!("UDP request failed: {:?}", err);
+                        }
+                    }
+                });
             }
         }
     }

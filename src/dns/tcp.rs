@@ -1,5 +1,7 @@
 use std::io::{Result, Read, Write};
 use std::net::{TcpListener, TcpStream};
+use std::thread::spawn;
+use std::sync::Arc;
 
 use dns::resolve::DnsResolver;
 use dns::cache::SynchronizedCache;
@@ -23,13 +25,13 @@ impl<'a> DnsTcpClient<'a> {
 }*/
 
 pub struct DnsTcpServer<'a> {
-    client: &'a DnsUdpClient,
+    client: Arc<DnsUdpClient>,
     cache: &'a SynchronizedCache,
     port: u16
 }
 
 impl<'a> DnsTcpServer<'a> {
-    pub fn new(client: &'a DnsUdpClient,
+    pub fn new(client: Arc<DnsUdpClient>,
                cache: &'a SynchronizedCache,
                port: u16) -> DnsTcpServer<'a> {
         DnsTcpServer {
@@ -39,7 +41,9 @@ impl<'a> DnsTcpServer<'a> {
         }
     }
 
-    pub fn handle_request(&mut self, mut stream: &TcpStream) -> Result<()> {
+    pub fn handle_request(mut stream: &TcpStream,
+                          client: &DnsUdpClient,
+                          cache: &SynchronizedCache) -> Result<()> {
         let request = {
             let mut len_buffer = [0; 2];
             try!(stream.read(&mut len_buffer));
@@ -56,7 +60,7 @@ impl<'a> DnsTcpServer<'a> {
             let mut results = Vec::new();
             for question in &request.questions {
                 println!("{}", question);
-                let mut resolver = DnsResolver::new(self.client, self.cache);
+                let mut resolver = DnsResolver::new(client, cache);
                 if let Ok(result) = resolver.resolve(&question.name,
                                                      question.qtype.clone()) {
                     results.push(result);
@@ -114,12 +118,18 @@ impl<'a> DnsServer for DnsTcpServer<'a> {
         let socket = socket_attempt.unwrap();
         for wrap_stream in socket.incoming() {
             if let Ok(stream) = wrap_stream {
-                match self.handle_request(&stream) {
-                    Ok(_) => {},
-                    Err(err) => {
-                        println!("TCP request failed: {:?}", err);
+                let cache_clone = self.cache.clone();
+                let client_clone = self.client.clone();
+                spawn(move || {
+                    match DnsTcpServer::handle_request(&stream,
+                                                       &client_clone,
+                                                       &cache_clone) {
+                        Ok(_) => {},
+                        Err(err) => {
+                            println!("TCP request failed: {:?}", err);
+                        }
                     }
-                }
+                });
             }
         }
 

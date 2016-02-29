@@ -48,14 +48,14 @@ fn main() {
         let udp_client_clone = client.clone();
         let udp_cache_clone = cache.clone();
         let udp_server = spawn(move|| {
-            let mut server = DnsUdpServer::new(&udp_client_clone, &udp_cache_clone, port);
+            let mut server = DnsUdpServer::new(udp_client_clone, &udp_cache_clone, port);
             server.run();
         });
 
         let tcp_client_clone = client.clone();
         let tcp_cache_clone = cache.clone();
         let _ = spawn(move|| {
-            let mut server = DnsTcpServer::new(&tcp_client_clone, &tcp_cache_clone, port);
+            let mut server = DnsTcpServer::new(tcp_client_clone, &tcp_cache_clone, port);
             server.run();
         });
 
