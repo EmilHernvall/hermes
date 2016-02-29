@@ -7,7 +7,7 @@ use std::env;
 use std::sync::Arc;
 use std::thread::spawn;
 
-use dns::network::DnsServer;
+use dns::server::DnsServer;
 use dns::udp::DnsUdpServer;
 use dns::udp::DnsUdpClient;
 use dns::tcp::DnsTcpServer;
@@ -44,6 +44,8 @@ fn main() {
         //println!("usage: ./resolve <domain>");
 
         let port = 1053;
+
+        println!("Listening on port {}", port);
 
         let udp_client_clone = client.clone();
         let udp_cache_clone = cache.clone();

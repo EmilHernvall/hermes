@@ -5,24 +5,11 @@ use std::sync::Arc;
 
 use dns::resolve::DnsResolver;
 use dns::cache::SynchronizedCache;
-//use dns::network::{DnsClient, DnsServer};
-use dns::network::DnsServer;
+use dns::server::{DnsServer, build_response};
 use dns::udp::DnsUdpClient;
-use dns::protocol::{DnsHeader, DnsPacket};
+use dns::protocol::DnsPacket;
 
 use dns::buffer::{PacketBuffer, StreamPacketBuffer, VectorPacketBuffer};
-
-/*pub struct DnsTcpClient<'a> {
-    server: &'a str
-}
-
-impl<'a> DnsTcpClient<'a> {
-    pub fn new(server: &'a str) -> DnsTcpClient {
-        DnsTcpClient {
-            server: server
-        }
-    }
-}*/
 
 pub struct DnsTcpServer<'a> {
     client: Arc<DnsUdpClient>,
@@ -54,46 +41,8 @@ impl<'a> DnsTcpServer<'a> {
 
         let mut res_buffer = VectorPacketBuffer::new();
 
-        {
-            let mut res_packet = DnsPacket::new(&mut res_buffer);
-
-            let mut results = Vec::new();
-            for question in &request.questions {
-                println!("{}", question);
-                let mut resolver = DnsResolver::new(client, cache);
-                if let Ok(result) = resolver.resolve(&question.name,
-                                                     question.qtype.clone()) {
-                    results.push(result);
-                }
-            }
-
-            let mut answers = Vec::new();
-            for result in results {
-                for answer in result.answers {
-                    println!("{:?}", answer);
-                    answers.push(answer);
-                }
-            }
-
-            let mut head = DnsHeader::new();
-
-            head.id = request.id;
-            head.recursion_available = true;
-            head.questions = request.questions.len() as u16;
-            head.answers = answers.len() as u16;
-            head.response = true;
-            head.truncated_message = false;
-
-            try!(head.write(&mut res_packet));
-
-            for question in request.questions {
-                try!(question.write(&mut res_packet));
-            }
-
-            for answer in answers {
-                try!(answer.write(&mut res_packet));
-            }
-        };
+        let mut resolver = DnsResolver::new(client, cache);
+        try!(build_response(&request, &mut resolver, &mut res_buffer, 0xFFFF));
 
         let len = res_buffer.pos();
 
@@ -118,12 +67,12 @@ impl<'a> DnsServer for DnsTcpServer<'a> {
         let socket = socket_attempt.unwrap();
         for wrap_stream in socket.incoming() {
             if let Ok(stream) = wrap_stream {
-                let cache_clone = self.cache.clone();
-                let client_clone = self.client.clone();
+                let client = self.client.clone();
+                let cache = self.cache.clone();
                 spawn(move || {
                     match DnsTcpServer::handle_request(&stream,
-                                                       &client_clone,
-                                                       &cache_clone) {
+                                                       &client,
+                                                       &cache) {
                         Ok(_) => {},
                         Err(err) => {
                             println!("TCP request failed: {:?}", err);

@@ -494,6 +494,30 @@ impl QueryResult {
         None
     }
 
+    pub fn get_unresolved_cnames(&self) -> Vec<ResourceRecord> {
+
+        let mut unresolved = Vec::new();
+        for answer in &self.answers {
+            let mut matched = false;
+            if let ResourceRecord::CNAME(_, ref host, _) = *answer {
+                for answer2 in &self.answers {
+                    if let ResourceRecord::A(ref host2, _, _) = *answer2 {
+                        if host2 == host {
+                            matched = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if !matched {
+                unresolved.push(answer.clone());
+            }
+        }
+
+        unresolved
+    }
+
     pub fn get_resolved_ns(&self, qname: &str) -> Option<String> {
 
         let mut new_authorities = Vec::new();

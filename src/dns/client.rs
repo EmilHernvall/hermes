@@ -8,7 +8,3 @@ pub trait DnsClient {
                   qtype: QueryType,
                   server: (&str, u16)) -> Result<QueryResult>;
 }
-
-pub trait DnsServer {
-    fn run(&mut self) -> bool;
-}

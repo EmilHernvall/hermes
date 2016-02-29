@@ -4,7 +4,7 @@ use std::io::{Error, ErrorKind};
 use rand::random;
 
 use dns::protocol::{QueryType, QueryResult};
-use dns::network::DnsClient;
+use dns::client::DnsClient;
 use dns::udp::DnsUdpClient;
 use dns::cache::SynchronizedCache;
 
