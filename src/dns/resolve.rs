@@ -68,7 +68,7 @@ impl<'a> DnsResolver<'a> {
                 //response.print();
 
                 // If we've got an actual answer, we're done!
-                if response.answers.len() > 0 {
+                if response.answers.len() > 0 /*|| response.has_soa(qname)*/ {
                     final_result = Ok(response.clone());
                     self.cache.update(response.answers);
                     self.cache.update(response.authorities);

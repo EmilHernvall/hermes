@@ -52,6 +52,7 @@ impl RecordSet {
                 timestamp: Local::now()
             };
 
+        println!("cache entry update: {:?} ", rec);
         if self.records.contains(&entry) {
             self.records.remove(&entry);
         }

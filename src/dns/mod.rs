@@ -1,3 +1,4 @@
+pub mod authority;
 pub mod buffer;
 pub mod cache;
 pub mod client;

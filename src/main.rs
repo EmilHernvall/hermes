@@ -20,24 +20,20 @@ use dns::resolve::DnsResolver;
 use dns::cache::SynchronizedCache;
 use dns::protocol::{QueryType,ResourceRecord};
 use dns::web::run_webserver;
+use dns::authority::Authority;
 
 fn main() {
 
-
     let client = Arc::new(DnsUdpClient::new());
     client.run().unwrap();
+
+    let mut authority = Authority::new();
 
     let mut cache = SynchronizedCache::new();
     cache.run();
 
     let rootservers = get_rootservers();
     cache.update(rootservers);
-
-    let mut local_records = Vec::new();
-    local_records.push(ResourceRecord::A("srv.dev.znaptag.com".to_string(), "192.168.1.21".parse::<Ipv4Addr>().unwrap(), 86400));
-    local_records.push(ResourceRecord::A("app.dev.znaptag.com".to_string(), "192.168.1.22".parse::<Ipv4Addr>().unwrap(), 86400));
-    //local_records.push(ResourceRecord::CNAME("test.dev.znaptag.com".to_string(), "app.dev.znaptag.com".to_string(), 86400));
-    cache.update(local_records);
 
     if let Some(arg1) = env::args().nth(1) {
 
@@ -70,7 +66,7 @@ fn main() {
             server.run();
         });
 
-        run_webserver(&cache);
+        run_webserver(&mut authority, &cache);
     }
 }
 

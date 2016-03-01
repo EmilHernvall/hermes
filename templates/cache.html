@@ -42,8 +42,6 @@
     table.entry_table td.entry_qtype {
         width: 50px;
     }
-    table.entry_table td.entry_domain {
-    }
     table.entry_table td.entry_host {
         width: 200px;
     }
@@ -72,7 +70,6 @@
                             {{#each entries}}
                             <tr>
                                 <td class="entry_qtype">{{type}}</td>
-                                <td class="entry_domain">{{domain}}</td>
                                 {{#if host}}
                                 <td class="entry_host">{{host}}</td>
                                 {{/if}}

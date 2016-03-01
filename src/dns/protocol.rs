@@ -37,14 +37,14 @@ impl QueryType {
     }
 }
 
-#[derive(Debug,Clone,PartialEq,Eq,Hash)]
+#[derive(Debug,Clone,PartialEq,Eq,Hash,PartialOrd,Ord)]
 #[allow(dead_code)]
 pub enum ResourceRecord {
     UNKNOWN(String, u16, u16, u32), // 0
     A(String, Ipv4Addr, u32), // 1
     NS(String, String, u32), // 2
     CNAME(String, String, u32), // 5
-    SOA, // 6
+    SOA(String, String, String, u32, u32, u32, u32, u32, u32), // 6
     PTR, // 12
     MX(String, u16, String, u32), // 15
     TXT, // 16
@@ -122,6 +122,29 @@ impl ResourceRecord {
                 try!(buffer.read_qname(&mut mx));
 
                 return Ok(ResourceRecord::MX(domain, priority, mx, ttl));
+            },
+            QueryType::SOA => {
+                let mut mname = String::new();
+                try!(buffer.read_qname(&mut mname));
+
+                let mut rname = String::new();
+                try!(buffer.read_qname(&mut rname));
+
+                let serial = try!(buffer.read_u32());
+                let refresh = try!(buffer.read_u32());
+                let retry = try!(buffer.read_u32());
+                let expire = try!(buffer.read_u32());
+                let minimum = try!(buffer.read_u32());
+
+                return Ok(ResourceRecord::SOA(domain,
+                                              mname,
+                                              rname,
+                                              serial,
+                                              refresh,
+                                              retry,
+                                              expire,
+                                              minimum,
+                                              ttl));
             },
             _ => {
                 try!(buffer.step(data_len as usize));
@@ -202,6 +225,32 @@ impl ResourceRecord {
                 try!(buffer.write_u16(priority));
                 try!(buffer.write_qname(mx));
             },
+            ResourceRecord::SOA(ref domain,
+                                ref mname,
+                                ref rname,
+                                serial,
+                                refresh,
+                                retry,
+                                expire,
+                                minimum,
+                                ttl) => {
+
+                try!(buffer.write_qname(domain));
+                try!(buffer.write_u16(QueryType::SOA as u16));
+                try!(buffer.write_u16(1));
+                try!(buffer.write_u32(ttl));
+                try!(buffer.write_u16(mname.len() as u16 + 2 +
+                                      rname.len() as u16 + 2 +
+                                      5*4));
+
+                try!(buffer.write_qname(mname));
+                try!(buffer.write_qname(rname));
+                try!(buffer.write_u32(serial));
+                try!(buffer.write_u32(refresh));
+                try!(buffer.write_u32(retry));
+                try!(buffer.write_u32(expire));
+                try!(buffer.write_u32(minimum));
+            },
             _ => {
             }
         }
@@ -240,7 +289,7 @@ impl ResourceRecord {
             ResourceRecord::SRV(_, _, _, _, _, _) => QueryType::SRV,
             ResourceRecord::MX(_, _, _, _) => QueryType::MX,
             ResourceRecord::UNKNOWN(_, _, _, _) => QueryType::UNKNOWN,
-            ResourceRecord::SOA => QueryType::SOA,
+            ResourceRecord::SOA(_, _, _, _, _, _, _, _, _) => QueryType::SOA,
             ResourceRecord::PTR => QueryType::PTR,
             ResourceRecord::TXT => QueryType::TXT
         }
@@ -255,7 +304,7 @@ impl ResourceRecord {
             ResourceRecord::SRV(ref domain, _, _, _, _, _) => Some(domain.clone()),
             ResourceRecord::MX(ref domain, _, _, _) => Some(domain.clone()),
             ResourceRecord::UNKNOWN(ref domain, _, _, _) => Some(domain.clone()),
-            ResourceRecord::SOA => None,
+            ResourceRecord::SOA(_, _, _, _, _, _, _, _, _) => None,
             ResourceRecord::PTR => None,
             ResourceRecord::TXT => None
         }
@@ -270,7 +319,7 @@ impl ResourceRecord {
             ResourceRecord::SRV(_, _, _, _, _, ttl) => ttl,
             ResourceRecord::MX(_, _, _, ttl) => ttl,
             ResourceRecord::UNKNOWN(_, _, _, ttl) => ttl,
-            ResourceRecord::SOA => 0,
+            ResourceRecord::SOA(_, _, _, _, _, _, _, _, _) => 0,
             ResourceRecord::PTR => 0,
             ResourceRecord::TXT => 0
         }
@@ -605,4 +654,19 @@ impl DnsPacket {
 
         None
     }
+
+    /*pub fn has_soa(&self, qname: &str) -> bool {
+
+        for auth in &self.authorities {
+            if let ResourceRecord::SOA(ref domain, _, _, _, _, _, _, _, _) = *auth {
+                if !qname.to_lowercase().ends_with(&domain.to_lowercase()) {
+                    continue;
+                }
+
+                return true;
+            }
+        }
+
+        false
+    }*/
 }
