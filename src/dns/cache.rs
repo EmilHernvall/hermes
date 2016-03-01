@@ -6,7 +6,7 @@ use std::clone::Clone;
 
 use chrono::*;
 
-use dns::protocol::{ResourceRecord, QueryType, QueryResult};
+use dns::protocol::{ResourceRecord, QueryType, DnsPacket};
 
 #[derive(Eq)]
 pub struct RecordEntry {
@@ -87,11 +87,11 @@ impl Cache {
 
     pub fn lookup(&self,
                   qname: &String,
-                  qtype: QueryType) -> Option<QueryResult> {
+                  qtype: QueryType) -> Option<DnsPacket> {
 
         let mut result = None;
 
-        let mut qr = QueryResult::new(0, false);
+        let mut qr = DnsPacket::new();
         self.fill_queryresult(qname, &qtype, &mut qr.answers);
         if qtype == QueryType::A {
             self.fill_queryresult(qname, &QueryType::CNAME, &mut qr.answers);
@@ -149,7 +149,7 @@ enum CacheRequest {
 
 enum CacheResponse {
     UpdateOk,
-    QueryOk(Option<QueryResult>)
+    QueryOk(Option<DnsPacket>)
 }
 
 pub type CacheMessage = (CacheRequest, Sender<CacheResponse>);
@@ -192,7 +192,7 @@ impl SynchronizedCache {
 
     pub fn lookup(&self,
                   qname: String,
-                  qtype: QueryType) -> Option<QueryResult> {
+                  qtype: QueryType) -> Option<DnsPacket> {
 
         if let Some(ref req_tx) = self.tx {
             let (res_tx, res_rx) = channel();

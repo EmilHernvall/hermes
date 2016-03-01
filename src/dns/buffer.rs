@@ -9,6 +9,115 @@ pub trait PacketBuffer {
     fn pos(&self) -> usize;
     fn seek(&mut self, pos: usize) -> Result<()>;
     fn step(&mut self, steps: usize) -> Result<()>;
+
+    fn write_u8(&mut self, val: u8) -> Result<()> {
+        try!(self.write(val));
+
+        Ok(())
+    }
+
+    fn write_u16(&mut self, val: u16) -> Result<()> {
+        try!(self.write((val >> 8) as u8));
+        try!(self.write((val & 0xFF) as u8));
+
+        Ok(())
+    }
+
+    fn write_u32(&mut self, val: u32) -> Result<()> {
+        try!(self.write(((val >> 24) & 0xFF) as u8));
+        try!(self.write(((val >> 16) & 0xFF) as u8));
+        try!(self.write(((val >> 8) & 0xFF) as u8));
+        try!(self.write(((val >> 0) & 0xFF) as u8));
+
+        Ok(())
+    }
+
+    fn qname_len(&self, qname: &String) -> usize {
+        qname.split(".").map(|x| x.len() + 1).fold(1, |x, y| x+y)
+    }
+
+    fn write_qname(&mut self, qname: &String) -> Result<()> {
+
+        for label in qname.split(".") {
+            let len = label.len();
+            try!(self.write_u8(len as u8));
+            for b in label.as_bytes() {
+                try!(self.write_u8(*b));
+            }
+        }
+
+        try!(self.write_u8(0));
+
+        Ok(())
+    }
+
+    fn read_u16(&mut self) -> Result<u16>
+    {
+        let res = ((try!(self.read()) as u16) << 8) |
+                  (try!(self.read()) as u16);
+
+        Ok(res)
+    }
+
+    fn read_u32(&mut self) -> Result<u32>
+    {
+        let res = ((try!(self.read()) as u32) << 24) |
+                  ((try!(self.read()) as u32) << 16) |
+                  ((try!(self.read()) as u32) << 8) |
+                  ((try!(self.read()) as u32) << 0);
+
+        Ok(res)
+    }
+
+    fn read_qname(&mut self, outstr: &mut String) -> Result<()>
+    {
+        let mut pos = self.pos();
+        let mut jumped = false;
+
+        let mut delim = "";
+        loop {
+            let len = try!(self.get(pos));
+
+            // A two byte sequence, where the two highest bits of the first byte is
+            // set, represents a offset relative to the start of the buffer. We
+            // handle this by jumping to the offset, setting a flag to indicate
+            // that we shouldn't update the shared buffer position once done.
+            if (len & 0xC0) > 0 {
+
+                // When a jump is performed, we only modify the shared buffer
+                // position once, and avoid making the change later on.
+                if !jumped {
+                    try!(self.seek(pos+2));
+                }
+
+                let b2 = try!(self.get(pos+1)) as u16;
+                let offset = (((len as u16) ^ 0xC0) << 8) | b2;
+                pos = offset as usize;
+                jumped = true;
+                continue;
+            }
+
+            pos += 1;
+
+            // Names are terminated by an empty label of length 0
+            if len == 0 {
+                break;
+            }
+
+            outstr.push_str(delim);
+            outstr.push_str(&String::from_utf8_lossy(try!(self.get_range(pos, len as usize))));
+            delim = ".";
+
+            pos += len as usize;
+        }
+
+        if !jumped {
+            try!(self.seek(pos));
+        }
+
+        Ok(())
+    }
+
 }
 
 pub struct VectorPacketBuffer {

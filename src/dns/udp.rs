@@ -12,15 +12,14 @@ use dns::cache::SynchronizedCache;
 use dns::client::DnsClient;
 use dns::server::{DnsServer, build_response};
 use dns::protocol::{DnsHeader,
-                    QueryResult,
-                    DnsQuestion,
                     DnsPacket,
+                    DnsQuestion,
                     QueryType};
 use dns::buffer::{PacketBuffer, BytePacketBuffer, VectorPacketBuffer};
 
 pub struct PendingQuery {
     seq: u16,
-    tx: Sender<QueryResult>
+    tx: Sender<DnsPacket>
 }
 
 pub struct DnsUdpClient {
@@ -59,14 +58,13 @@ impl DnsUdpClient {
                     }
                 };
 
-                let mut response_packet = DnsPacket::new(&mut res_buffer);
-                match response_packet.read() {
+                match DnsPacket::from_buffer(&mut res_buffer) {
                     Ok(query_result) => {
 
                         if let Ok(mut pending_queries) = pending_queries_lock.lock() {
                             let mut matched_query = None;
                             for (i, pending_query) in pending_queries.iter().enumerate() {
-                                if pending_query.seq == query_result.id {
+                                if pending_query.seq == query_result.header.id {
                                     let _ = pending_query.tx.send(query_result.clone());
                                     matched_query = Some(i);
                                 }
@@ -95,11 +93,10 @@ impl DnsClient for DnsUdpClient {
     fn send_query(&self,
                   qname: &String,
                   qtype: QueryType,
-                  server: (&str, u16)) -> Result<QueryResult> {
+                  server: (&str, u16)) -> Result<DnsPacket> {
 
         // Prepare request
         let mut req_buffer = BytePacketBuffer::new();
-        let mut req_packet = DnsPacket::new(&mut req_buffer);
 
         let mut head = DnsHeader::new();
         if let Ok(seq_cell) = self.seq.lock() {
@@ -107,10 +104,10 @@ impl DnsClient for DnsUdpClient {
             seq_cell.set(head.id+1);
         }
         head.questions = 1;
-        try!(head.write(&mut req_packet));
+        try!(head.write(&mut req_buffer));
 
         let question = DnsQuestion::new(&qname, qtype);
-        try!(question.write(&mut req_packet));
+        try!(question.write(&mut req_buffer));
 
         let (tx, rx) = channel();
         if let Ok(mut pending_queries) = self.pending_queries.lock() {
@@ -120,7 +117,7 @@ impl DnsClient for DnsUdpClient {
             });
 
             // Send query
-            try!(self.socket.send_to(&req_packet.buffer.buf[0..req_packet.buffer.pos], server));
+            try!(self.socket.send_to(&req_buffer.buf[0..req_buffer.pos], server));
         }
 
         if let Ok(qr) = rx.recv() {
@@ -151,10 +148,9 @@ impl<'a> DnsUdpServer<'a> {
     pub fn handle_request(&self, socket: &UdpSocket) -> Result<()> {
 
         let mut req_buffer = BytePacketBuffer::new();
-        let mut packet = DnsPacket::new(&mut req_buffer);
-        let (_, src) = try!(socket.recv_from(&mut packet.buffer.buf));
+        let (_, src) = try!(socket.recv_from(&mut req_buffer.buf));
 
-        let request = try!(packet.read());
+        let request = try!(DnsPacket::from_buffer(&mut req_buffer));
 
         if let Ok(socket_clone) = socket.try_clone() {
             let client = self.client.clone();

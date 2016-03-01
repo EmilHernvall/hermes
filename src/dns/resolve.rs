@@ -2,7 +2,7 @@ use std::io::Result;
 use std::vec::Vec;
 use std::io::{Error, ErrorKind};
 
-use dns::protocol::{QueryType, QueryResult};
+use dns::protocol::{QueryType, DnsPacket};
 use dns::client::DnsClient;
 use dns::udp::DnsUdpClient;
 use dns::cache::SynchronizedCache;
@@ -24,7 +24,7 @@ impl<'a> DnsResolver<'a> {
 
     pub fn resolve(&mut self,
                    qname: &String,
-                   qtype: QueryType) -> Result<QueryResult> {
+                   qtype: QueryType) -> Result<DnsPacket> {
 
         if let Some(qr) = self.cache.lookup(qname.clone(), qtype.clone()) {
             //println!("got record cache hit for {}", qname);
@@ -33,16 +33,11 @@ impl<'a> DnsResolver<'a> {
 
         // Set us up for failure
         let err = Error::new(ErrorKind::NotFound, "No DNS server found");
-        let mut final_result: Result<QueryResult> = Err(err);
-
-        // Pick a random root server to start out with
-        //let idx = random::<usize>() % self.rootservers.len();
-        //let mut ns = self.rootservers[idx].to_string();
+        let mut final_result: Result<DnsPacket> = Err(err);
 
         let mut tentative_ns = None;
 
-        // Next, try to do better than hitting the root servers by finding a closer
-        // NS in the cache
+        // Find the closest 
         let labels = qname.split('.').collect::<Vec<&str>>();
         for lbl_idx in 0..labels.len()+1 {
             let domain = labels[lbl_idx..labels.len()].join(".");

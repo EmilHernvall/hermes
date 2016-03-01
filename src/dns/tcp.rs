@@ -35,8 +35,7 @@ impl<'a> DnsTcpServer<'a> {
             let mut len_buffer = [0; 2];
             try!(stream.read(&mut len_buffer));
             let mut stream_buffer = StreamPacketBuffer::new(&mut stream);
-            let mut req_packet = DnsPacket::new(&mut stream_buffer);
-            try!(req_packet.read())
+            try!(DnsPacket::from_buffer(&mut stream_buffer))
         };
 
         let mut res_buffer = VectorPacketBuffer::new();
