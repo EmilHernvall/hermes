@@ -2,10 +2,15 @@ mod dns;
 
 extern crate rand;
 extern crate chrono;
+extern crate tiny_http;
+extern crate rustc_serialize;
+extern crate ascii;
+extern crate handlebars;
 
 use std::env;
 use std::sync::Arc;
 use std::thread::spawn;
+use std::net::{Ipv4Addr, Ipv6Addr};
 
 use dns::server::DnsServer;
 use dns::udp::DnsUdpServer;
@@ -14,7 +19,7 @@ use dns::tcp::DnsTcpServer;
 use dns::resolve::DnsResolver;
 use dns::cache::SynchronizedCache;
 use dns::protocol::{QueryType,ResourceRecord};
-use std::net::{Ipv4Addr, Ipv6Addr};
+use dns::web::run_webserver;
 
 fn main() {
 
@@ -53,7 +58,7 @@ fn main() {
 
         let udp_client_clone = client.clone();
         let udp_cache_clone = cache.clone();
-        let udp_server = spawn(move|| {
+        let _ = spawn(move|| {
             let mut server = DnsUdpServer::new(udp_client_clone, &udp_cache_clone, port);
             server.run();
         });
@@ -65,7 +70,7 @@ fn main() {
             server.run();
         });
 
-        let _ = udp_server.join();
+        run_webserver(&cache);
     }
 }
 

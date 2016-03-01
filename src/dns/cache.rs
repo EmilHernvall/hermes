@@ -8,7 +8,7 @@ use chrono::*;
 
 use dns::protocol::{ResourceRecord, QueryType, DnsPacket};
 
-#[derive(Eq)]
+#[derive(Clone,Eq)]
 pub struct RecordEntry {
     pub record: ResourceRecord,
     pub timestamp: DateTime<Local>
@@ -26,18 +26,27 @@ impl Hash for RecordEntry {
     }
 }
 
+#[derive(Clone)]
 pub struct RecordSet {
-    pub records: HashSet<RecordEntry>
+    pub domain: String,
+    pub records: HashSet<RecordEntry>,
+    pub hits: u32,
+    pub updates: u32
 }
 
 impl RecordSet {
-    pub fn new() -> RecordSet {
+    pub fn new(domain: String) -> RecordSet {
         RecordSet {
-            records: HashSet::new()
+            domain: domain,
+            records: HashSet::new(),
+            hits: 0,
+            updates: 0
         }
     }
 
     pub fn append_record(&mut self, rec: &ResourceRecord) -> bool {
+        self.updates += 1;
+
         let entry = RecordEntry {
                 record: rec.clone(),
                 timestamp: Local::now()
@@ -62,12 +71,14 @@ impl Cache {
         }
     }
 
-    fn fill_queryresult(&self,
+    fn fill_queryresult(&mut self,
                         qname: &String,
                         qtype: &QueryType,
                         result_vec: &mut Vec<ResourceRecord>) {
 
-        if let Some(ref rs) = self.records.get(qname) {
+        if let Some(ref mut rs) = self.records.get_mut(qname) {
+            rs.hits += 1;
+
             let now = Local::now();
             //println!("recordset {} has:", qname);
             for entry in &rs.records {
@@ -85,7 +96,7 @@ impl Cache {
         }
     }
 
-    pub fn lookup(&self,
+    pub fn lookup(&mut self,
                   qname: &String,
                   qtype: QueryType) -> Option<DnsPacket> {
 
@@ -130,7 +141,7 @@ impl Cache {
                     continue;
                 }
 
-                let mut rs = RecordSet::new();
+                let mut rs = RecordSet::new(domain.clone());
                 rs.append_record(rec);
                 self.records.insert(domain.clone(), rs);
 
@@ -144,12 +155,14 @@ impl Cache {
 
 enum CacheRequest {
     Update(Vec<ResourceRecord>),
-    Query(String, QueryType)
+    Query(String, QueryType),
+    List
 }
 
 enum CacheResponse {
     UpdateOk,
-    QueryOk(Option<DnsPacket>)
+    QueryOk(Option<DnsPacket>),
+    ListOk(Vec<RecordSet>)
 }
 
 pub type CacheMessage = (CacheRequest, Sender<CacheResponse>);
@@ -184,10 +197,32 @@ impl SynchronizedCache {
                     CacheRequest::Query(qname, qtype) => {
                         let res = cache.lookup(&qname, qtype);
                         let _ = res_tx.send(CacheResponse::QueryOk(res));
+                    },
+                    CacheRequest::List => {
+                        let mut list = Vec::new();
+
+                        for (_, rs) in &cache.records {
+                            list.push(rs.clone());
+                        }
+
+                        let _ = res_tx.send(CacheResponse::ListOk(list));
                     }
                 }
             }
         });
+    }
+
+    pub fn list(&self) -> Vec<RecordSet> {
+        if let Some(ref req_tx) = self.tx {
+            let (res_tx, res_rx) = channel();
+            let _ = req_tx.send((CacheRequest::List, res_tx));
+
+            if let Ok(CacheResponse::ListOk(res)) = res_rx.recv() {
+                return res;
+            }
+        }
+
+        Vec::new()
     }
 
     pub fn lookup(&self,

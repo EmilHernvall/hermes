@@ -6,3 +6,7 @@ authors = ["emil"]
 [dependencies]
 rand = "0.3.13"
 chrono = "0.2"
+tiny_http = "0.5"
+rustc-serialize = "0.3"
+ascii = "0.5.0"
+handlebars = "0.15.0"

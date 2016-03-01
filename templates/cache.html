@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+    <head>
+    <style type="text/css">
+    html {
+        font-family: sans-serif;
+    }
+
+    table.record_table {
+        width: 100%;
+        border-spacing: 0;
+    }
+    table.record_table th {
+        text-align: left;
+    }
+    table.record_table th,
+    table.record_table td {
+        padding: 10px;
+    }
+    table.record_table td.domain {
+        width: 200px;
+    }
+    table.record_table td.hits {
+        width: 100px;
+    }
+    table.record_table td.updates {
+        width: 100px;
+    }
+    table.record_table td.records {
+    }
+    table.record_table tr.record_row:nth-child(2n+1) td {
+        background-color: #ccc;
+    }
+
+    table.entry_table {
+        width: 100%;
+        border-spacing: 0;
+    }
+    table.entry_table td {
+        padding: 10px;
+    }
+    table.entry_table td.entry_qtype {
+        width: 50px;
+    }
+    table.entry_table td.entry_domain {
+    }
+    table.entry_table td.entry_host {
+        width: 200px;
+    }
+    table.entry_table td.entry_ttl {
+        width: 50px;
+    }
+    </style>
+    </head>
+    <body>
+        <h1>Cache</h1>
+
+        <table class="record_table">
+            <tr>
+                <th>Domain</th>
+                <th>Hits</th>
+                <th>Updates</th>
+                <th>Records</th>
+            </tr>
+            {{#each records}}
+                <tr class="record_row">
+                    <td class="domain">{{domain}}</td>
+                    <td class="hits">{{hits}}</td>
+                    <td class="updates">{{updates}}</td>
+                    <td class="records">
+                        <table class="entry_table">
+                            {{#each entries}}
+                            <tr>
+                                <td class="entry_qtype">{{type}}</td>
+                                <td class="entry_domain">{{domain}}</td>
+                                {{#if host}}
+                                <td class="entry_host">{{host}}</td>
+                                {{/if}}
+                                <td class="entry_ttl">{{ttl}}</td>
+                            </tr>
+                            {{/each}}
+                        </table>
+                    </td>
+                </tr>
+            {{/each}}
+        </table>
+    </body>
+</html>
