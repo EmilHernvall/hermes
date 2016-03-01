@@ -35,18 +35,23 @@ pub fn build_response(request: &QueryResult,
 
     let mut results = Vec::new();
     for question in &request.questions {
-        if let Ok(result) = resolver.resolve(&question.name,
-                                             question.qtype.clone()) {
+        match resolver.resolve(&question.name,
+                               question.qtype.clone()) {
 
-            let unmatched = result.get_unresolved_cnames();
-            results.push(result);
+            Ok(result) => {
+                let unmatched = result.get_unresolved_cnames();
+                results.push(result);
 
-            resolve_cnames(&unmatched, &mut results, resolver);
+                resolve_cnames(&unmatched, &mut results, resolver);
+            },
+            Err(err) => {
+                println!("Resolving {} failed: {:?}", question.name, err);
+            }
         }
     }
 
     let mut answers = Vec::new();
-    print!("Results for {:?} {}: ",
+    print!("{:?} {}: ",
            request.questions[0].qtype,
            request.questions[0].name);
     for result in results {

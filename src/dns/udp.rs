@@ -34,7 +34,7 @@ impl DnsUdpClient {
     pub fn new() -> DnsUdpClient {
         DnsUdpClient {
             seq: Mutex::new(Cell::new(0)),
-            socket: UdpSocket::bind(("0.0.0.0", 34254)).unwrap(),
+            socket: UdpSocket::bind(("0.0.0.0", 34255)).unwrap(),
             pending_queries: Arc::new(Mutex::new(Vec::new()))
         }
     }
@@ -148,23 +148,36 @@ impl<'a> DnsUdpServer<'a> {
         }
     }
 
-    pub fn handle_request(socket: &UdpSocket,
-                          client: &DnsUdpClient,
-                          cache: &SynchronizedCache) -> Result<()> {
+    pub fn handle_request(&self, socket: &UdpSocket) -> Result<()> {
+
         let mut req_buffer = BytePacketBuffer::new();
         let mut packet = DnsPacket::new(&mut req_buffer);
         let (_, src) = try!(socket.recv_from(&mut packet.buffer.buf));
 
         let request = try!(packet.read());
 
-        let mut res_buffer = VectorPacketBuffer::new();
+        if let Ok(socket_clone) = socket.try_clone() {
+            let client = self.client.clone();
+            let cache = self.cache.clone();
+            spawn(move || {
+                let mut res_buffer = VectorPacketBuffer::new();
 
-        let mut resolver = DnsResolver::new(client, cache);
-        try!(build_response(&request, &mut resolver, &mut res_buffer, 512));
+                let mut resolver = DnsResolver::new(&client, &cache);
+                if let Ok(_) = build_response(&request,
+                                              &mut resolver,
+                                              &mut res_buffer,
+                                              512) {
 
-        let len = res_buffer.pos();
+                    let len = res_buffer.pos();
 
-        try!(socket.send_to(try!(res_buffer.get_range(0, len)), src));
+                    if let Ok(data) = res_buffer.get_range(0, len) {
+                        if let Err(err) = socket_clone.send_to(data, src) {
+                            println!("UDP send failed: {:?}", err);
+                        }
+                    }
+            }
+            });
+        }
 
         Ok(())
     }
@@ -179,17 +192,11 @@ impl<'a> DnsServer for DnsUdpServer<'a> {
 
         let socket = socket_attempt.unwrap();
         loop {
-            if let Ok(socket_clone) = socket.try_clone() {
-                let client = self.client.clone();
-                let cache = self.cache.clone();
-                spawn(move || {
-                    match DnsUdpServer::handle_request(&socket_clone, &client, &cache) {
-                        Ok(_) => {},
-                        Err(err) => {
-                            println!("UDP request failed: {:?}", err);
-                        }
-                    }
-                });
+            match self.handle_request(&socket) {
+                Ok(_) => {},
+                Err(err) => {
+                    println!("UDP request failed: {:?}", err);
+                }
             }
         }
     }

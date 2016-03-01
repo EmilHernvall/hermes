@@ -107,7 +107,7 @@ impl ResourceRecord {
                 let port = try!(packet.read_u16());
 
                 let mut srv = String::new();
-                let _ = packet.read_qname(&mut srv);
+                try!(packet.read_qname(&mut srv));
 
                 return Ok(ResourceRecord::SRV(domain,
                                            priority,
@@ -180,8 +180,18 @@ impl ResourceRecord {
 
                 try!(packet.write_qname(addr));
             },
-            //ResourceRecord::SRV(ref domain, priority, weight, port, ref srv, ttl) => {
-            //},
+            ResourceRecord::SRV(ref domain, priority, weight, port, ref srv, ttl) => {
+                try!(packet.write_qname(domain));
+                try!(packet.write_u16(QueryType::SRV as u16));
+                try!(packet.write_u16(1));
+                try!(packet.write_u32(ttl));
+                try!(packet.write_u16(srv.len() as u16 + 8));
+
+                try!(packet.write_u16(priority));
+                try!(packet.write_u16(weight));
+                try!(packet.write_u16(port));
+                try!(packet.write_qname(srv));
+            },
             ResourceRecord::MX(ref domain, priority, ref mx, ttl) => {
                 try!(packet.write_qname(domain));
                 try!(packet.write_u16(QueryType::MX as u16));
@@ -585,10 +595,6 @@ impl<'a, T> DnsPacket<'a, T> where T: 'a + PacketBuffer {
 
     fn read_u16(&mut self) -> Result<u16>
     {
-        //if self.pos+1 >= self.buf.len() {
-        //    return Err(Error::new(ErrorKind::InvalidInput, "End of buffer"));
-        //}
-
         let res = ((try!(self.buffer.read()) as u16) << 8) |
                   (try!(self.buffer.read()) as u16);
 
@@ -597,10 +603,6 @@ impl<'a, T> DnsPacket<'a, T> where T: 'a + PacketBuffer {
 
     fn read_u32(&mut self) -> Result<u32>
     {
-        //if self.pos+3 >= self.buf.len() {
-        //    return Err(Error::new(ErrorKind::InvalidInput, "End of buffer"));
-        //}
-
         let res = ((try!(self.buffer.read()) as u32) << 24) |
                   ((try!(self.buffer.read()) as u32) << 16) |
                   ((try!(self.buffer.read()) as u32) << 8) |
@@ -669,6 +671,26 @@ impl<'a, T> DnsPacket<'a, T> where T: 'a + PacketBuffer {
         Ok(())
     }
 
+    pub fn read(&mut self) -> Result<QueryResult> {
+        let mut header = DnsHeader::new();
+        try!(header.read(self));
+
+        let mut result = QueryResult::new(header.id, header.authoritative_answer);
+
+        for _ in 0..header.questions {
+            let mut question = DnsQuestion::new(&"".to_string(),
+                                                QueryType::UNKNOWN);
+            try!(question.read(self));
+            result.questions.push(question);
+        }
+
+        try!(self.read_records(header.answers, &mut result.answers));
+        try!(self.read_records(header.authoritative_entries, &mut result.authorities));
+        try!(self.read_records(header.resource_entries, &mut result.resources));
+
+        Ok(result)
+    }
+
     fn write_u8(&mut self, val: u8) -> Result<()> {
         try!(self.buffer.write(val));
 
@@ -708,25 +730,5 @@ impl<'a, T> DnsPacket<'a, T> where T: 'a + PacketBuffer {
         try!(self.write_u8(0));
 
         Ok(())
-    }
-
-    pub fn read(&mut self) -> Result<QueryResult> {
-        let mut header = DnsHeader::new();
-        try!(header.read(self));
-
-        let mut result = QueryResult::new(header.id, header.authoritative_answer);
-
-        for _ in 0..header.questions {
-            let mut question = DnsQuestion::new(&"".to_string(),
-                                                QueryType::UNKNOWN);
-            try!(question.read(self));
-            result.questions.push(question);
-        }
-
-        try!(self.read_records(header.answers, &mut result.answers));
-        try!(self.read_records(header.authoritative_entries, &mut result.authorities));
-        try!(self.read_records(header.resource_entries, &mut result.resources));
-
-        Ok(result)
     }
 }

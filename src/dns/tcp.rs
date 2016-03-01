@@ -1,5 +1,5 @@
 use std::io::{Result, Read, Write};
-use std::net::{TcpListener, TcpStream};
+use std::net::{TcpListener, TcpStream, Shutdown};
 use std::thread::spawn;
 use std::sync::Arc;
 
@@ -28,7 +28,7 @@ impl<'a> DnsTcpServer<'a> {
         }
     }
 
-    pub fn handle_request(mut stream: &TcpStream,
+    pub fn handle_request(mut stream: TcpStream,
                           client: &DnsUdpClient,
                           cache: &SynchronizedCache) -> Result<()> {
         let request = {
@@ -53,6 +53,8 @@ impl<'a> DnsTcpServer<'a> {
         try!(stream.write(&len_buffer));
         try!(stream.write(try!(res_buffer.get_range(0, len))));
 
+        try!(stream.shutdown(Shutdown::Both));
+
         Ok(())
     }
 }
@@ -70,7 +72,7 @@ impl<'a> DnsServer for DnsTcpServer<'a> {
                 let client = self.client.clone();
                 let cache = self.cache.clone();
                 spawn(move || {
-                    match DnsTcpServer::handle_request(&stream,
+                    match DnsTcpServer::handle_request(stream,
                                                        &client,
                                                        &cache) {
                         Ok(_) => {},
@@ -79,6 +81,9 @@ impl<'a> DnsServer for DnsTcpServer<'a> {
                         }
                     }
                 });
+            }
+            else if let Err(err) = wrap_stream {
+                println!("Err: {:?}", err);
             }
         }
 
