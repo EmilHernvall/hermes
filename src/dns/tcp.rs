@@ -34,6 +34,7 @@ impl<'a> DnsTcpServer<'a> {
 
     pub fn handle_request(mut stream: TcpStream,
                           client: &DnsUdpClient,
+                          authority: &Authority,
                           cache: &SynchronizedCache) -> Result<()> {
         let request = {
             let mut len_buffer = [0; 2];
@@ -44,7 +45,7 @@ impl<'a> DnsTcpServer<'a> {
 
         let mut res_buffer = VectorPacketBuffer::new();
 
-        let mut resolver = DnsResolver::new(client, cache);
+        let mut resolver = DnsResolver::new(client, authority, cache);
         try!(build_response(&request, &mut resolver, &mut res_buffer, 0xFFFF));
 
         let len = res_buffer.pos();
@@ -73,10 +74,12 @@ impl<'a> DnsServer for DnsTcpServer<'a> {
         for wrap_stream in socket.incoming() {
             if let Ok(stream) = wrap_stream {
                 let client = self.client.clone();
+                let authority = self.authority.clone();
                 let cache = self.cache.clone();
                 spawn(move || {
                     match DnsTcpServer::handle_request(stream,
                                                        &client,
+                                                       &authority,
                                                        &cache) {
                         Ok(_) => {},
                         Err(err) => {

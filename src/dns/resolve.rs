@@ -6,18 +6,22 @@ use dns::protocol::{QueryType, DnsPacket};
 use dns::client::DnsClient;
 use dns::udp::DnsUdpClient;
 use dns::cache::SynchronizedCache;
+use dns::authority::Authority;
 
 pub struct DnsResolver<'a> {
     client: &'a DnsUdpClient,
+    authority: &'a Authority,
     cache: &'a SynchronizedCache
 }
 
 impl<'a> DnsResolver<'a> {
     pub fn new(client: &'a DnsUdpClient,
+               authority: &'a Authority,
                cache: &'a SynchronizedCache) -> DnsResolver<'a> {
 
         DnsResolver {
             client: client,
+            authority: authority,
             cache: cache
         }
     }
@@ -25,6 +29,11 @@ impl<'a> DnsResolver<'a> {
     pub fn resolve(&mut self,
                    qname: &String,
                    qtype: QueryType) -> Result<DnsPacket> {
+
+        if let Some(qr) = self.authority.query(qname, qtype.clone()) {
+            //println!("got record cache hit for {}", qname);
+            return Ok(qr);
+        }
 
         if let Some(qr) = self.cache.lookup(qname.clone(), qtype.clone()) {
             //println!("got record cache hit for {}", qname);

@@ -1,7 +1,7 @@
 use std::io::Result;
 
 use dns::resolve::DnsResolver;
-use dns::protocol::{DnsHeader, DnsPacket, QueryType, ResourceRecord};
+use dns::protocol::{DnsPacket, QueryType, ResourceRecord};
 use dns::buffer::{PacketBuffer, VectorPacketBuffer};
 
 pub trait DnsServer {
@@ -31,8 +31,13 @@ pub fn build_response(request: &DnsPacket,
                       res_buffer: &mut VectorPacketBuffer,
                       max_size: usize) -> Result<()>
 {
+    let mut packet = DnsPacket::new();
+
     let mut results = Vec::new();
     for question in &request.questions {
+
+        packet.questions.push(question.clone());
+
         match resolver.resolve(&question.name,
                                question.qtype.clone()) {
 
@@ -48,51 +53,22 @@ pub fn build_response(request: &DnsPacket,
         }
     }
 
-    let mut answers = Vec::new();
     print!("{:?} {}: ",
            request.questions[0].qtype,
            request.questions[0].name);
     for result in results {
         for answer in result.answers {
             print!("{:?} ", answer);
-            answers.push(answer);
+            packet.answers.push(answer);
         }
     }
     println!("");
 
-    let mut head = DnsHeader::new();
+    packet.header.id = request.header.id;
+    packet.header.recursion_available = true;
+    packet.header.response = true;
 
-    let mut size = head.binary_len();
-    for ref question in &request.questions {
-        size += question.binary_len(res_buffer);
-    }
-
-    let mut answer_count = answers.len();
-
-    for (i, answer) in answers.iter().enumerate() {
-        size += answer.binary_len(res_buffer);
-        if size > max_size {
-            answer_count = i;
-            break;
-        }
-    }
-
-    head.id = request.header.id;
-    head.recursion_available = true;
-    head.questions = request.questions.len() as u16;
-    head.answers = answer_count as u16;
-    head.response = true;
-    head.truncated_message = answer_count < answers.len();
-
-    try!(head.write(res_buffer));
-
-    for question in &request.questions {
-        try!(question.write(res_buffer));
-    }
-
-    for answer in answers.iter().take(answer_count) {
-        try!(answer.write(res_buffer));
-    }
+    try!(packet.write(res_buffer, max_size));
 
     Ok(())
 }

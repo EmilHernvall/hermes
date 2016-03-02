@@ -1,7 +1,11 @@
 use std::collections::{BTreeMap,BTreeSet};
 use std::sync::{RwLock, LockResult, RwLockReadGuard, RwLockWriteGuard};
+use std::io::{Write,Result};
+use std::fs::File;
+use std::path::Path;
 
-use dns::protocol::ResourceRecord;
+use dns::buffer::{VectorPacketBuffer, PacketBuffer, StreamPacketBuffer};
+use dns::protocol::{DnsPacket,ResourceRecord,QueryType};
 
 #[derive(Clone,Debug)]
 pub struct Zone {
@@ -47,6 +51,80 @@ impl<'a> Zones {
         }
     }
 
+    pub fn load(&mut self) -> Result<()> {
+        let zones_dir = try!(Path::new("zones").read_dir());
+
+        for wrapped_filename in zones_dir {
+            let filename = match wrapped_filename {
+                Ok(x) => x,
+                Err(e) => continue
+            };
+
+            let mut zone_file = match File::open(filename.path()) {
+                Ok(x) => x,
+                Err(e) => continue
+            };
+
+            let mut buffer = StreamPacketBuffer::new(&mut zone_file);
+
+            let mut zone = Zone::new(String::new(), String::new(), String::new());
+            try!(buffer.read_qname(&mut zone.domain));
+            try!(buffer.read_qname(&mut zone.mname));
+            try!(buffer.read_qname(&mut zone.rname));
+            zone.serial = try!(buffer.read_u32());
+            zone.refresh = try!(buffer.read_u32());
+            zone.retry = try!(buffer.read_u32());
+            zone.expire = try!(buffer.read_u32());
+            zone.minimum = try!(buffer.read_u32());
+
+            let record_count = try!(buffer.read_u32());
+
+            for _ in 0..record_count {
+                let rr = try!(ResourceRecord::read(&mut buffer));
+                zone.add_record(&rr);
+            }
+
+            println!("Loaded zone {} with {} records", zone.domain, record_count);
+
+            self.zones.insert(zone.domain.clone(), zone);
+        }
+
+        Ok(())
+    }
+
+    pub fn save(&mut self) -> Result<()> {
+        let zones_dir = Path::new("zones");
+        for (_, zone) in &self.zones {
+            let filename = zones_dir.join(Path::new(&zone.domain));
+            let mut zone_file = match File::create(&filename) {
+                Ok(x) => x,
+                Err(_) => {
+                    println!("Failed to save file {:?}", filename);
+                    continue;
+                }
+            };
+
+            let mut buffer = VectorPacketBuffer::new();
+            let _ = buffer.write_qname(&zone.domain);
+            let _ = buffer.write_qname(&zone.mname);
+            let _ = buffer.write_qname(&zone.rname);
+            let _ = buffer.write_u32(zone.serial);
+            let _ = buffer.write_u32(zone.refresh);
+            let _ = buffer.write_u32(zone.retry);
+            let _ = buffer.write_u32(zone.expire);
+            let _ = buffer.write_u32(zone.minimum);
+            let _ = buffer.write_u32(zone.records.len() as u32);
+
+            for rec in &zone.records {
+                let _ = rec.write(&mut buffer);
+            }
+
+            let _ = zone_file.write(&buffer.buffer[0..buffer.pos]);
+        }
+
+        Ok(())
+    }
+
     pub fn zones(&self) -> Vec<&Zone>
     {
         self.zones.values().map(|x| x).collect()
@@ -77,6 +155,61 @@ impl Authority {
         Authority {
             zones: RwLock::new(Zones::new())
         }
+    }
+
+    pub fn load(&self)
+    {
+        let mut zones = match self.zones.write().ok() {
+            Some(x) => x,
+            None => return
+        };
+
+        zones.load();
+    }
+
+    pub fn query(&self, qname: &String, qtype: QueryType) -> Option<DnsPacket>
+    {
+        let zones = match self.zones.read().ok() {
+            Some(x) => x,
+            None => return None
+        };
+
+        let mut best_match = None;
+        for zone in zones.zones() {
+            if !qname.ends_with(&zone.domain) {
+                continue;
+            }
+
+            if let Some((len, _)) = best_match {
+                if len < zone.domain.len() {
+                    best_match = Some((zone.domain.len(), zone));
+                }
+            }
+            else {
+                best_match = Some((zone.domain.len(), zone));
+            }
+        }
+
+        let zone = match best_match {
+            Some((_, zone)) => zone,
+            None => return None
+        };
+
+        let mut packet = DnsPacket::new();
+        packet.header.authoritative_answer = true;
+
+        for rec in &zone.records {
+            let domain = match rec.get_domain() {
+                Some(x) => x,
+                None => continue
+            };
+
+            if &domain == qname && rec.get_querytype() == qtype {
+                packet.answers.push(rec.clone());
+            }
+        }
+
+        Some(packet)
     }
 
     pub fn read(&self) -> LockResult<RwLockReadGuard<Zones>>

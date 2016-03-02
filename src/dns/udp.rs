@@ -158,11 +158,12 @@ impl<'a> DnsUdpServer<'a> {
 
         if let Ok(socket_clone) = socket.try_clone() {
             let client = self.client.clone();
+            let authority = self.authority.clone();
             let cache = self.cache.clone();
             spawn(move || {
                 let mut res_buffer = VectorPacketBuffer::new();
 
-                let mut resolver = DnsResolver::new(&client, &cache);
+                let mut resolver = DnsResolver::new(&client, &authority, &cache);
                 if let Ok(_) = build_response(&request,
                                               &mut resolver,
                                               &mut res_buffer,

@@ -655,6 +655,42 @@ impl DnsPacket {
         None
     }
 
+    pub fn write<T: PacketBuffer>(&mut self,
+                                  buffer: &mut T,
+                                  max_size: usize) -> Result<()>
+    {
+        let mut size = self.header.binary_len();
+        for ref question in &self.questions {
+            size += question.binary_len(buffer);
+        }
+
+        let mut answer_count = self.answers.len();
+
+        for (i, answer) in self.answers.iter().enumerate() {
+            size += answer.binary_len(buffer);
+            if size > max_size {
+                answer_count = i;
+                break;
+            }
+        }
+
+        self.header.questions = self.questions.len() as u16;
+        self.header.answers = answer_count as u16;
+        self.header.truncated_message = answer_count < self.answers.len();
+
+        try!(self.header.write(buffer));
+
+        for question in &self.questions {
+            try!(question.write(buffer));
+        }
+
+        for answer in self.answers.iter().take(answer_count) {
+            try!(answer.write(buffer));
+        }
+
+        Ok(())
+    }
+
     /*pub fn has_soa(&self, qname: &str) -> bool {
 
         for auth in &self.authorities {

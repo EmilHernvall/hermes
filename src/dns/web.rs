@@ -316,6 +316,11 @@ fn handle_authority(mut request: Request,
                                      create_data.mname,
                                      create_data.rname));
 
+            match zones.save() {
+                Ok(_) => println!("Zones saved!"),
+                Err(e) =>  println!("Zone Saving failed: {:?}", e)
+            }
+
             let response = Response::empty(StatusCode(200));
             return request.respond(response);
         },
@@ -422,12 +427,19 @@ fn handle_zone(mut request: Request,
                 None => return error_response(request, "Failed to access authority")
             };
 
-            let zone = match zones.get_zone_mut(zone) {
-                Some(x) => x,
-                None => return error_response(request, "Zone not found")
+            {
+                let zone = match zones.get_zone_mut(zone) {
+                    Some(x) => x,
+                    None => return error_response(request, "Zone not found")
+                };
+
+                zone.add_record(&rr);
             };
 
-            zone.add_record(&rr);
+            match zones.save() {
+                Ok(_) => println!("Zones saved!"),
+                Err(e) =>  println!("Zone Saving failed: {:?}", e)
+            }
 
             let response = Response::empty(StatusCode(200));
             return request.respond(response);

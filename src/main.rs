@@ -25,10 +25,11 @@ use dns::authority::Authority;
 
 fn main() {
 
+    let authority = Arc::new(Authority::new());
+    let _ = authority.load();
+
     let client = Arc::new(DnsUdpClient::new());
     client.run().unwrap();
-
-    let authority = Arc::new(Authority::new());
 
     let mut cache = SynchronizedCache::new();
     cache.run();
@@ -36,7 +37,7 @@ fn main() {
 
     if let Some(arg1) = env::args().nth(1) {
 
-        let mut resolver = DnsResolver::new(&client, &cache);
+        let mut resolver = DnsResolver::new(&client, &authority, &cache);
         let res = resolver.resolve(&arg1, QueryType::A);
         if let Ok(result) = res {
             result.print();
