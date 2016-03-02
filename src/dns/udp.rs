@@ -16,6 +16,7 @@ use dns::protocol::{DnsHeader,
                     DnsQuestion,
                     QueryType};
 use dns::buffer::{PacketBuffer, BytePacketBuffer, VectorPacketBuffer};
+use dns::authority::Authority;
 
 pub struct PendingQuery {
     seq: u16,
@@ -130,16 +131,19 @@ impl DnsClient for DnsUdpClient {
 
 pub struct DnsUdpServer<'a> {
     client: Arc<DnsUdpClient>,
+    authority: Arc<Authority>,
     cache: &'a SynchronizedCache,
     port: u16
 }
 
 impl<'a> DnsUdpServer<'a> {
     pub fn new(client: Arc<DnsUdpClient>,
+               authority: Arc<Authority>,
                cache: &'a SynchronizedCache,
                port: u16) -> DnsUdpServer<'a> {
         DnsUdpServer {
             client: client,
+            authority: authority,
             cache: cache,
             port: port
         }
@@ -181,12 +185,14 @@ impl<'a> DnsUdpServer<'a> {
 
 impl<'a> DnsServer for DnsUdpServer<'a> {
     fn run(&mut self) -> bool {
-        let socket_attempt = UdpSocket::bind(("0.0.0.0", self.port));
-        if !socket_attempt.is_ok() {
-            return false;
-        }
+        let socket = match UdpSocket::bind(("0.0.0.0", self.port)) {
+            Ok(x) => x,
+            Err(e) => {
+                println!("Failed to start UDP DNS server: {:?}", e);
+                return false;
+            }
+        };
 
-        let socket = socket_attempt.unwrap();
         loop {
             match self.handle_request(&socket) {
                 Ok(_) => {},

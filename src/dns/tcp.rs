@@ -8,21 +8,25 @@ use dns::cache::SynchronizedCache;
 use dns::server::{DnsServer, build_response};
 use dns::udp::DnsUdpClient;
 use dns::protocol::DnsPacket;
+use dns::authority::Authority;
 
 use dns::buffer::{PacketBuffer, StreamPacketBuffer, VectorPacketBuffer};
 
 pub struct DnsTcpServer<'a> {
     client: Arc<DnsUdpClient>,
+    authority: Arc<Authority>,
     cache: &'a SynchronizedCache,
     port: u16
 }
 
 impl<'a> DnsTcpServer<'a> {
     pub fn new(client: Arc<DnsUdpClient>,
+               authority: Arc<Authority>,
                cache: &'a SynchronizedCache,
                port: u16) -> DnsTcpServer<'a> {
         DnsTcpServer {
             client: client,
+            authority: authority,
             cache: cache,
             port: port
         }

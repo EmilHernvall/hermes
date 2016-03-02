@@ -6,6 +6,7 @@ extern crate tiny_http;
 extern crate rustc_serialize;
 extern crate ascii;
 extern crate handlebars;
+extern crate regex;
 
 use std::env;
 use std::sync::Arc;
@@ -27,13 +28,11 @@ fn main() {
     let client = Arc::new(DnsUdpClient::new());
     client.run().unwrap();
 
-    let mut authority = Authority::new();
+    let authority = Arc::new(Authority::new());
 
     let mut cache = SynchronizedCache::new();
     cache.run();
-
-    let rootservers = get_rootservers();
-    cache.update(rootservers);
+    cache.update(get_rootservers());
 
     if let Some(arg1) = env::args().nth(1) {
 
@@ -54,19 +53,27 @@ fn main() {
 
         let udp_client_clone = client.clone();
         let udp_cache_clone = cache.clone();
+        let udp_authority_clone = authority.clone();
         let _ = spawn(move|| {
-            let mut server = DnsUdpServer::new(udp_client_clone, &udp_cache_clone, port);
+            let mut server = DnsUdpServer::new(udp_client_clone,
+                                               udp_authority_clone,
+                                               &udp_cache_clone,
+                                               port);
             server.run();
         });
 
         let tcp_client_clone = client.clone();
         let tcp_cache_clone = cache.clone();
+        let tcp_authority_clone = authority.clone();
         let _ = spawn(move|| {
-            let mut server = DnsTcpServer::new(tcp_client_clone, &tcp_cache_clone, port);
+            let mut server = DnsTcpServer::new(tcp_client_clone,
+                                               tcp_authority_clone,
+                                               &tcp_cache_clone,
+                                               port);
             server.run();
         });
 
-        run_webserver(&mut authority, &cache);
+        run_webserver(&*authority, &cache);
     }
 }
 

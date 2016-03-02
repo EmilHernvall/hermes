@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap,BTreeSet};
+use std::sync::{RwLock, LockResult, RwLockReadGuard, RwLockWriteGuard};
 
 use dns::protocol::ResourceRecord;
 
@@ -35,19 +36,57 @@ impl Zone {
     }
 }
 
-pub struct Authority {
-    pub zones: BTreeMap<String, Zone>
+pub struct Zones {
+    zones: BTreeMap<String, Zone>
 }
 
-impl Authority {
-    pub fn new() -> Authority {
-        Authority {
+impl<'a> Zones {
+    pub fn new() -> Zones {
+        Zones {
             zones: BTreeMap::new()
         }
+    }
+
+    pub fn zones(&self) -> Vec<&Zone>
+    {
+        self.zones.values().map(|x| x).collect()
     }
 
     pub fn add_zone(&mut self, zone: Zone)
     {
         self.zones.insert(zone.domain.clone(), zone);
     }
+
+    pub fn get_zone(&'a self, domain: &str) -> Option<&'a Zone>
+    {
+        self.zones.get(domain)
+    }
+
+    pub fn get_zone_mut(&'a mut self, domain: &str) -> Option<&'a mut Zone>
+    {
+        self.zones.get_mut(domain)
+    }
 }
+
+pub struct Authority {
+    zones: RwLock<Zones>
+}
+
+impl Authority {
+    pub fn new() -> Authority {
+        Authority {
+            zones: RwLock::new(Zones::new())
+        }
+    }
+
+    pub fn read(&self) -> LockResult<RwLockReadGuard<Zones>>
+    {
+        self.zones.read()
+    }
+
+    pub fn write(&self) -> LockResult<RwLockWriteGuard<Zones>>
+    {
+        self.zones.write()
+    }
+}
+
