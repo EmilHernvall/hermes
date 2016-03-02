@@ -57,12 +57,12 @@ impl<'a> Zones {
         for wrapped_filename in zones_dir {
             let filename = match wrapped_filename {
                 Ok(x) => x,
-                Err(e) => continue
+                Err(_) => continue
             };
 
             let mut zone_file = match File::open(filename.path()) {
                 Ok(x) => x,
-                Err(e) => continue
+                Err(_) => continue
             };
 
             let mut buffer = StreamPacketBuffer::new(&mut zone_file);
@@ -164,7 +164,9 @@ impl Authority {
             None => return
         };
 
-        zones.load();
+        if let Err(e) = zones.load() {
+            println!("Failed to load zones: {:?}", e);
+        }
     }
 
     pub fn query(&self, qname: &String, qtype: QueryType) -> Option<DnsPacket>
@@ -204,9 +206,17 @@ impl Authority {
                 None => continue
             };
 
-            if &domain == qname && rec.get_querytype() == qtype {
+            if &domain != qname {
+                continue;
+            }
+
+            let rtype = rec.get_querytype();
+            if qtype == rtype || (qtype == QueryType::A &&
+                                  rtype == QueryType::CNAME) {
+
                 packet.answers.push(rec.clone());
             }
+
         }
 
         Some(packet)

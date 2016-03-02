@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+    <head>
+    <style type="text/css">
+    html {
+        font-family: sans-serif;
+    }
+
+    table.zone_table {
+        width: 100%;
+        border-spacing: 0;
+    }
+    table.zone_table th {
+        text-align: left;
+    }
+    table.zone_table th,
+    table.zone_table td {
+        padding: 10px;
+    }
+    </style>
+    </head>
+    <body>
+        <h1>Zones</h1>
+        <table class="zone_table">
+            <tr>
+                <th>Domain</th>
+                <th>Mname</th>
+                <th>Rname</th>
+                <th>Serial</th>
+                <th>Refresh</th>
+                <th>Retry</th>
+                <th>Expire</th>
+                <th>Minimum</th>
+            </tr>
+            {{#each zones}}
+            <tr>
+                <td><a href="/authority/{{domain}}">{{domain}}</a></td>
+                <td>{{mname}}</td>
+                <td>{{rname}}</td>
+                <td>{{serial}}</td>
+                <td>{{refresh}}</td>
+                <td>{{retry}}</td>
+                <td>{{expire}}</td>
+                <td>{{minimum}}</td>
+            </tr>
+            {{/each}}
+        </table>
+    </body>
+</html>

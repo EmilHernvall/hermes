@@ -113,7 +113,18 @@ pub fn run_webserver(authority: &Authority,
                      cache: &SynchronizedCache)
 {
     let mut handlebars = Handlebars::new();
-    let _ = handlebars.register_template_file("cache", Path::new("templates/cache.html"));
+    if !handlebars.register_template_file("cache", Path::new("templates/cache.html")).is_ok() {
+        println!("Failed to register cache template");
+        return;
+    }
+    if !handlebars.register_template_file("authority", Path::new("templates/authority.html")).is_ok() {
+        println!("Failed to register authority template");
+        return;
+    }
+    if !handlebars.register_template_file("zone", Path::new("templates/zone.html")).is_ok() {
+        println!("Failed to register zone template");
+        return;
+    }
 
     let webserver = match Server::http(("0.0.0.0", 5380)) {
         Ok(x) => x,
@@ -190,7 +201,7 @@ pub fn run_webserver(authority: &Authority,
     }
 }
 
-pub fn handle_cache(mut request: Request,
+pub fn handle_cache(request: Request,
                     handlebars: &mut Handlebars,
                     json_output: bool,
                     cache: &SynchronizedCache) -> Result<()>
@@ -276,7 +287,7 @@ fn handle_authority(mut request: Request,
                 let mut d = BTreeMap::new();
                 d.insert("domain".to_string(), zone.domain.to_json());
                 d.insert("mname".to_string(), zone.mname.to_json());
-                d.insert("rname".to_string(), zone.mname.to_json());
+                d.insert("rname".to_string(), zone.rname.to_json());
                 d.insert("serial".to_string(), zone.serial.to_json());
                 d.insert("refresh".to_string(), zone.refresh.to_json());
                 d.insert("retry".to_string(), zone.retry.to_json());
@@ -286,17 +297,40 @@ fn handle_authority(mut request: Request,
             }
 
             let zones_arr = Json::Array(zones_json);
-            let output = match json::encode(&zones_arr).ok() {
-                Some(x) => x,
-                None => return error_response(request, "Failed to parse request")
-            };
 
-            let mut response = Response::from_string(output);
-            response.add_header(Header{
-                field: "Content-Type".parse::<HeaderField>().unwrap(),
-                value: "application/json".parse::<AsciiString>().unwrap()
-            });
-            return request.respond(response);
+            let mut result_dict = BTreeMap::new();
+            result_dict.insert("ok".to_string(), true.to_json());
+            result_dict.insert("zones".to_string(), zones_arr);
+            let result_obj = Json::Object(result_dict);
+
+            match json_output {
+                true => {
+                    let output = match json::encode(&result_obj).ok() {
+                        Some(x) => x,
+                        None => return error_response(request, "Failed to parse request")
+                    };
+
+                    let mut response = Response::from_string(output);
+                    response.add_header(Header{
+                        field: "Content-Type".parse::<HeaderField>().unwrap(),
+                        value: "application/json".parse::<AsciiString>().unwrap()
+                    });
+                    return request.respond(response);
+                },
+                false => {
+                    let html_data = match handlebars.render("authority", &result_obj).ok() {
+                        Some(x) => x,
+                        None => return error_response(request, "Failed to encode response")
+                    };
+
+                    let mut response = Response::from_string(html_data);
+                    response.add_header(Header{
+                        field: "Content-Type".parse::<HeaderField>().unwrap(),
+                        value: "text/html".parse::<AsciiString>().unwrap()
+                    });
+                    return request.respond(response);
+                }
+            };
         },
         Method::Post => {
             let create_data = match decode_json::<ZoneCreateRequest>(&mut request).ok() {
@@ -397,17 +431,40 @@ fn handle_zone(mut request: Request,
             }
 
             let records_arr = Json::Array(records);
-            let output = match json::encode(&records_arr).ok() {
-                Some(x) => x,
-                None => return error_response(request, "Failed to parse request")
-            };
 
-            let mut response = Response::from_string(output);
-            response.add_header(Header{
-                field: "Content-Type".parse::<HeaderField>().unwrap(),
-                value: "application/json".parse::<AsciiString>().unwrap()
-            });
-            return request.respond(response);
+            let mut result_dict = BTreeMap::new();
+            result_dict.insert("ok".to_string(), true.to_json());
+            result_dict.insert("records".to_string(), records_arr);
+            let result_obj = Json::Object(result_dict);
+
+            match json_output {
+                true => {
+                    let output = match json::encode(&result_obj).ok() {
+                        Some(x) => x,
+                        None => return error_response(request, "Failed to parse request")
+                    };
+
+                    let mut response = Response::from_string(output);
+                    response.add_header(Header{
+                        field: "Content-Type".parse::<HeaderField>().unwrap(),
+                        value: "application/json".parse::<AsciiString>().unwrap()
+                    });
+                    return request.respond(response);
+                },
+                false => {
+                    let html_data = match handlebars.render("zone", &result_obj).ok() {
+                        Some(x) => x,
+                        None => return error_response(request, "Failed to encode response")
+                    };
+
+                    let mut response = Response::from_string(html_data);
+                    response.add_header(Header{
+                        field: "Content-Type".parse::<HeaderField>().unwrap(),
+                        value: "text/html".parse::<AsciiString>().unwrap()
+                    });
+                    return request.respond(response);
+                }
+            };
         },
         Method::Post => {
             let create_data = match decode_json::<RecordCreateRequest>(&mut request).ok() {
