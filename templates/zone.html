@@ -17,26 +17,80 @@
     table.record_table td {
         padding: 10px;
     }
+    fieldset {
+        margin-bottom: 20px;
+    }
     </style>
     </head>
     <body>
-        <h1>Zone</h1>
-        <table class="record_table">
-            <tr>
-                <th>Domain</th>
-                <th>Type</th>
-                <th>TTL</th>
-            </tr>
-            {{#each records}}
-            <tr>
-                <td>{{domain}}</td>
-                <td>{{type}}</td>
-                <td>{{ttl}}</td>
-                {{#if host}}
-                <td>{{host}}</td>
-                {{/if}}
-            </tr>
-            {{/each}}
-        </table>
+        <h1>{{zone}}</h1>
+
+        <fieldset>
+            <legend>Current Records</legend>
+
+            <table class="record_table">
+                <tr>
+                    <th>Domain</th>
+                    <th>Type</th>
+                    <th>TTL</th>
+                </tr>
+                {{#each records}}
+                <tr>
+                    <td>{{domain}}</td>
+                    <td>{{type}}</td>
+                    <td>{{ttl}}</td>
+                    {{#if host}}
+                    <td>{{host}}</td>
+                    {{/if}}
+                </tr>
+                {{/each}}
+            </table>
+
+        </fieldset>
+
+        <fieldset>
+            <legend>New Record</legend>
+
+            <form method="POST" action="/authority/{{zone}}">
+
+                <div>
+                    <label for="recordtype">Record Type</label>
+                    <div>
+                        <select name="recordtype" id="recordtype">
+                            <option value="A">A</option>
+                            <option value="AAAA">AAAA</option>
+                            <option value="CNAME">CNAME</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div>
+                    <label for="domain">Domain</label>
+                    <div>
+                        <input type="text" name="domain" id="domain" />
+                    </div>
+                </div>
+
+                <div>
+                    <label for="host">Host</label>
+                    <div>
+                        <input type="text" name="host" id="host" />
+                    </div>
+                </div>
+
+                <div>
+                    <label for="ttl">TTL</label>
+                    <div>
+                        <input type="number" name="ttl" id="ttl" value="300" />
+                    </div>
+                </div>
+
+                <div>
+                    <button type="submit">Create Record</button>
+                </div>
+
+            </form>
+
+        </fieldset>
     </body>
 </html>
