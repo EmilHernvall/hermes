@@ -154,13 +154,13 @@ impl Cache {
     }
 }
 
-enum CacheRequest {
+pub enum CacheRequest {
     Update(Vec<ResourceRecord>),
     Query(String, QueryType),
     List
 }
 
-enum CacheResponse {
+pub enum CacheResponse {
     UpdateOk,
     QueryOk(Option<DnsPacket>),
     ListOk(Vec<RecordSet>)

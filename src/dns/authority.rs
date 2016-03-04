@@ -38,6 +38,10 @@ impl Zone {
     pub fn add_record(&mut self, rec: &ResourceRecord) -> bool {
         self.records.insert(rec.clone())
     }
+
+    pub fn delete_record(&mut self, rec: &ResourceRecord) -> bool {
+        self.records.remove(rec)
+    }
 }
 
 pub struct Zones {

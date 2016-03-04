@@ -69,11 +69,12 @@ fn parse_formdata<R: Read>(reader: &mut R) -> Result<Vec<(String, String)>> {
     Ok(res)
 }
 
-fn rr_to_json(rr: &ResourceRecord) -> Json {
+fn rr_to_json(id: u32, rr: &ResourceRecord) -> Json {
     let mut d = BTreeMap::new();
 
     let mut qtype = String::new();
     let _ = write!(&mut qtype, "{:?}", rr.get_querytype());
+    d.insert("id".to_string(), id.to_json());
     d.insert("type".to_string(), qtype.to_json());
 
     match *rr {
@@ -167,6 +168,10 @@ pub fn run_webserver(authority: &Authority,
                      cache: &SynchronizedCache)
 {
     let mut handlebars = Handlebars::new();
+    if !handlebars.register_template_file("layout", Path::new("templates/layout.html")).is_ok() {
+        println!("Failed to register layout template");
+        return;
+    }
     if !handlebars.register_template_file("cache", Path::new("templates/cache.html")).is_ok() {
         println!("Failed to register cache template");
         return;
@@ -192,7 +197,7 @@ pub fn run_webserver(authority: &Authority,
     let authority_re = Regex::new(r"^/authority$").unwrap();
     let zone_re = Regex::new(r"^/authority/([A-Za-z0-9-.]+)$").unwrap();
 
-    for mut request in webserver.incoming_requests() {
+    for request in webserver.incoming_requests() {
         println!("HTTP {:?} {:?}", request.method(), request.url());
 
         let accept_header = request.headers().iter()
@@ -263,13 +268,6 @@ pub fn run_webserver(authority: &Authority,
             continue;
         }
 
-        if request.method() == &Method::Post {
-            let fields = parse_formdata(&mut request.as_reader()).unwrap_or(Vec::new());
-            for (k,v) in fields {
-                println!("{}: {}", k, v);
-            }
-        }
-
         let response = Response::empty(StatusCode(404));
         let _ = request.respond(response);
     }
@@ -295,8 +293,8 @@ pub fn handle_cache(request: Request,
             entries: Vec::new()
         };
 
-        for entry in rs.records {
-            cache_record.entries.push(rr_to_json(&entry.record));
+        for (id, entry) in rs.records.iter().enumerate() {
+            cache_record.entries.push(rr_to_json(id as u32, &entry.record));
         }
 
         cache_response.records.push(cache_record);
@@ -429,9 +427,9 @@ fn handle_authority(mut request: Request,
                     return request.respond(response);
                 },
                 false => {
-                    let html_data = match handlebars.render("authority", &result_obj).ok() {
-                        Some(x) => x,
-                        None => return error_response(request, "Failed to encode response")
+                    let html_data = match handlebars.render("authority", &result_obj) {
+                        Ok(x) => x,
+                        Err(e) => return error_response(request, &("Failed to encode response: ".to_string() + e.description()))
                     };
 
                     let mut response = Response::from_string(html_data);
@@ -444,7 +442,7 @@ fn handle_authority(mut request: Request,
             };
         },
         Method::Post => {
-            let create_data = if json_input {
+            let request_data = if json_input {
                 match decode_json::<ZoneCreateRequest>(&mut request).ok() {
                     Some(x) => x,
                     None => return error_response(request, "Failed to parse request")
@@ -456,22 +454,22 @@ fn handle_authority(mut request: Request,
                 }
             };
 
-            println!("Adding zone {}", &create_data.domain);
-            println!("{:?}", create_data);
+            println!("Adding zone {}", &request_data.domain);
+            println!("{:?}", request_data);
 
             let mut zones = match authority.write().ok() {
                 Some(x) => x,
                 None => return error_response(request, "Failed to access authority")
             };
 
-            let mut zone = Zone::new(create_data.domain,
-                                     create_data.mname,
-                                     create_data.rname);
+            let mut zone = Zone::new(request_data.domain,
+                                     request_data.mname,
+                                     request_data.rname);
             zone.serial = 0;
-            zone.refresh = create_data.refresh.unwrap_or(3600);
-            zone.retry = create_data.retry.unwrap_or(3600);
-            zone.expire = create_data.expire.unwrap_or(3600);
-            zone.minimum = create_data.minimum.unwrap_or(3600);
+            zone.refresh = request_data.refresh.unwrap_or(3600);
+            zone.retry = request_data.retry.unwrap_or(3600);
+            zone.expire = request_data.expire.unwrap_or(3600);
+            zone.minimum = request_data.minimum.unwrap_or(3600);
             zones.add_zone(zone);
 
             match zones.save() {
@@ -494,16 +492,17 @@ fn handle_authority(mut request: Request,
 }
 
 #[derive(Debug,RustcDecodable)]
-pub struct RecordCreateRequest
+pub struct RecordRequest
 {
+    pub delete_record: Option<bool>,
     pub recordtype: String,
     pub domain: String,
     pub ttl: u32,
     pub host: Option<String>
 }
 
-impl FormDataDecodable<RecordCreateRequest> for RecordCreateRequest {
-    fn from_formdata(fields: Vec<(String, String)>) -> Result<RecordCreateRequest> {
+impl FormDataDecodable<RecordRequest> for RecordRequest {
+    fn from_formdata(fields: Vec<(String, String)>) -> Result<RecordRequest> {
         let mut d = BTreeMap::new();
         for (k,v) in fields {
             d.insert(k, v);
@@ -524,7 +523,10 @@ impl FormDataDecodable<RecordCreateRequest> for RecordCreateRequest {
             None => return Err(Error::new(ErrorKind::InvalidInput, "missing ttl"))
         };
 
-        Ok(RecordCreateRequest {
+        let delete_record = d.get("delete_record").and_then(|x| x.parse::<bool>().ok());
+
+        Ok(RecordRequest {
+            delete_record: delete_record,
             recordtype: recordtype.clone(),
             domain: domain.clone(),
             ttl: ttl,
@@ -533,9 +535,9 @@ impl FormDataDecodable<RecordCreateRequest> for RecordCreateRequest {
     }
 }
 
-impl RecordCreateRequest {
+impl RecordRequest {
     fn to_resourcerecord(self) -> Option<ResourceRecord> {
-        match &*self.recordtype {
+        match self.recordtype.as_str() {
             "A" => {
                 let host = match self.host.and_then(|x| x.parse::<Ipv4Addr>().ok()) {
                     Some(x) => x,
@@ -586,8 +588,8 @@ fn handle_zone(mut request: Request,
             };
 
             let mut records = Vec::new();
-            for ref rr in &zone.records {
-                records.push(rr_to_json(rr));
+            for (id, rr) in zone.records.iter().enumerate() {
+                records.push(rr_to_json(id as u32, rr));
             }
 
             let records_arr = Json::Array(records);
@@ -627,25 +629,33 @@ fn handle_zone(mut request: Request,
                 }
             };
         },
-        Method::Post => {
-            let create_data = if json_input {
-                match decode_json::<RecordCreateRequest>(&mut request).ok() {
-                    Some(x) => x,
-                    None => return error_response(request, "Failed to parse request")
+        Method::Post | Method::Delete => {
+            let request_data = if json_input {
+                match decode_json::<RecordRequest>(&mut request) {
+                    Ok(x) => x,
+                    Err(e) => return error_response(request, e.description())
                 }
             } else {
-                match parse_formdata(&mut request.as_reader()).and_then(|x| RecordCreateRequest::from_formdata(x)) {
+                match parse_formdata(&mut request.as_reader()).and_then(|x| RecordRequest::from_formdata(x)) {
                     Ok(x) => x,
                     Err(e) => return error_response(request, e.description())
                 }
             };
 
-            println!("{:?}", create_data);
+            let delete_record = if request.method() == &Method::Delete {
+                true
+            } else {
+                request_data.delete_record.unwrap_or(false)
+            };
 
-            let rr = match create_data.to_resourcerecord() {
+            println!("{:?}", request_data);
+
+            let rr = match request_data.to_resourcerecord() {
                 Some(x) => x,
                 None => return error_response(request, "Invalid record specification")
             };
+
+            println!("{:?}", rr);
 
             let mut zones = match authority.write().ok() {
                 Some(x) => x,
@@ -658,7 +668,11 @@ fn handle_zone(mut request: Request,
                     None => return error_response(request, "Zone not found")
                 };
 
-                zone.add_record(&rr);
+                if delete_record {
+                    zone.delete_record(&rr);
+                } else {
+                    zone.add_record(&rr);
+                }
             };
 
             match zones.save() {

@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{{#block "title"}}hermes{{/block}}</title>
+    <style type="text/css">
+    html {
+        font-family: sans-serif;
+    }
+
+    body {
+        padding: 0;
+        margin: 0;
+    }
+
+    header {
+        display: flex;
+        width: 100%;
+        background-color: #eee;
+        height: 50px;
+    }
+    header h1 {
+        flex: 6;
+        margin: 0;
+        padding: 14px 0 0 20px;
+        font-size: 20px;
+        box-sizing: border-box;
+    }
+    header nav {
+        flex: 1;
+    }
+    header nav ul {
+        margin: 0;
+        padding: 0;
+        display: flex;
+    }
+    header nav ul li {
+        list-style-type: none;
+        margin: 0;
+        padding: 0;
+        flex: 1;
+        height: 50px;
+    }
+    header nav ul li a {
+        text-decoration: none;
+        display: block;
+        height: 50px;
+        width: 100%;
+        line-height: 50px;
+        text-align: center;
+    }
+    header nav ul li:nth-child(2n+1) {
+        background-color: #ddd;
+    }
+
+    .main_content {
+        padding: 20px;
+    }
+    </style>
+    {{#block "header"}}{{/block}}
+</head>
+<body>
+    <div class="main_wrapper">
+        <header>
+            <h1>Hermes DNS</h1>
+
+            <nav>
+                <ul>
+                    <li><a href="/cache">Cache</a></li>
+                    <li><a href="/authority">Authority</a></li>
+                </ul>
+            </nav>
+        </header>
+
+        <div class="main_content">
+            <h2>{{#block "title"}}hermes{{/block}}</h2>
+            {{#block "content"}}{{/block}}
+        </div>
+    </div>
+</body>
+</html>
