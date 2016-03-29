@@ -706,3 +706,8 @@ impl DnsPacket {
         false
     }*/
 }
+
+#[test]
+fn test_dns_packet()
+{
+}

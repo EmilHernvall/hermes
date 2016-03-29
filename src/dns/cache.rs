@@ -3,6 +3,7 @@ use std::hash::{Hash,Hasher};
 use std::sync::mpsc::{channel, Sender};
 use std::thread::spawn;
 use std::clone::Clone;
+use std::sync::Arc;
 
 use chrono::*;
 
@@ -62,7 +63,7 @@ impl RecordSet {
 }
 
 pub struct Cache {
-    records: HashMap<String, RecordSet>
+    records: HashMap<String, Arc<RecordSet>>
 }
 
 impl Cache {
@@ -77,7 +78,7 @@ impl Cache {
                         qtype: &QueryType,
                         result_vec: &mut Vec<ResourceRecord>) {
 
-        if let Some(ref mut rs) = self.records.get_mut(qname) {
+        if let Some(ref mut rs) = self.records.get_mut(qname).and_then(|x| Arc::get_mut(x)) {
             rs.hits += 1;
 
             let now = Local::now();
@@ -135,7 +136,7 @@ impl Cache {
 
         for rec in records {
             if let Some(ref domain) = rec.get_domain() {
-                if let Some(rs) = self.records.get_mut(domain) {
+                if let Some(rs) = self.records.get_mut(domain).and_then(|x| Arc::get_mut(x)) {
                     if rs.append_record(rec) {
                         //println!("updating record for {}: {:?}", domain, rec);
                     }
@@ -144,7 +145,7 @@ impl Cache {
 
                 let mut rs = RecordSet::new(domain.clone());
                 rs.append_record(rec);
-                self.records.insert(domain.clone(), rs);
+                self.records.insert(domain.clone(), Arc::new(rs));
 
                 //println!("new record for {}: {:?}", domain, rec);
             }
@@ -163,7 +164,7 @@ pub enum CacheRequest {
 pub enum CacheResponse {
     UpdateOk,
     QueryOk(Option<DnsPacket>),
-    ListOk(Vec<RecordSet>)
+    ListOk(Vec<Arc<RecordSet>>)
 }
 
 pub type CacheMessage = (CacheRequest, Sender<CacheResponse>);
@@ -213,7 +214,7 @@ impl SynchronizedCache {
         });
     }
 
-    pub fn list(&self) -> Vec<RecordSet> {
+    pub fn list(&self) -> Vec<Arc<RecordSet>> {
         if let Some(ref req_tx) = self.tx {
             let (res_tx, res_rx) = channel();
             let _ = req_tx.send((CacheRequest::List, res_tx));

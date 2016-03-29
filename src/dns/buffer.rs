@@ -308,3 +308,57 @@ impl PacketBuffer for BytePacketBuffer {
     }
 }
 
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+
+    #[test]
+    fn test_qname()
+    {
+        let mut buffer = VectorPacketBuffer::new();
+
+        let instr1 = "a.google.com".to_string();
+        let instr2 = "b.google.com".to_string();
+
+        // First write the standard string
+        match buffer.write_qname(&instr1) {
+            Ok(_) => {},
+            Err(_) => panic!()
+        }
+
+        // Then we set up a slight variation with relies on a jump back to the data of
+        // the first name
+        let crafted_data = [0x01, 'b' as u8, 0xC0, 0x02];
+        for b in crafted_data.iter() {
+            match buffer.write_u8(*b) {
+                Ok(_) => {},
+                Err(_) => panic!()
+            }
+        }
+
+        // Reset the buffer position for reading
+        buffer.pos = 0;
+
+        // Read the standard name
+        let mut outstr1 = String::new();
+        match buffer.read_qname(&mut outstr1) {
+            Ok(_) => {},
+            Err(_) => panic!()
+        }
+
+        assert_eq!(instr1, outstr1);
+
+        // Read the name with a jump
+        let mut outstr2 = String::new();
+        match buffer.read_qname(&mut outstr2) {
+            Ok(_) => {},
+            Err(_) => panic!()
+        }
+
+        assert_eq!(instr2, outstr2);
+
+        // Make sure we're now at the end of the buffer
+        assert_eq!(buffer.pos, buffer.buffer.len());
+    }
+}
