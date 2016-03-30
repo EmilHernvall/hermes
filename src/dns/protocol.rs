@@ -47,7 +47,7 @@ pub enum ResourceRecord {
     SOA(String, String, String, u32, u32, u32, u32, u32, u32), // 6
     PTR, // 12
     MX(String, u16, String, u32), // 15
-    TXT, // 16
+    TXT(String, String, u32), // 16
     AAAA(String, Ipv6Addr, u32), // 28
     SRV(String, u16, u16, u16, String, u32) // 33
 }
@@ -145,6 +145,16 @@ impl ResourceRecord {
                                               expire,
                                               minimum,
                                               ttl));
+            },
+            QueryType::TXT => {
+                let mut txt = String::new();
+
+                let cur_pos = buffer.pos();
+                txt.push_str(&String::from_utf8_lossy(try!(buffer.get_range(cur_pos, data_len as usize))));
+
+                try!(buffer.step(data_len as usize));
+
+                return Ok(ResourceRecord::TXT(domain, txt, ttl));
             },
             _ => {
                 try!(buffer.step(data_len as usize));
@@ -251,6 +261,17 @@ impl ResourceRecord {
                 try!(buffer.write_u32(expire));
                 try!(buffer.write_u32(minimum));
             },
+            ResourceRecord::TXT(ref domain, ref txt, ttl) => {
+                try!(buffer.write_qname(domain));
+                try!(buffer.write_u16(QueryType::TXT as u16));
+                try!(buffer.write_u16(1));
+                try!(buffer.write_u32(ttl));
+                try!(buffer.write_u16(txt.len() as u16));
+
+                for b in txt.as_bytes() {
+                    try!(buffer.write_u8(*b));
+                }
+            },
             _ => {
             }
         }
@@ -291,7 +312,7 @@ impl ResourceRecord {
             ResourceRecord::UNKNOWN(_, _, _, _) => QueryType::UNKNOWN,
             ResourceRecord::SOA(_, _, _, _, _, _, _, _, _) => QueryType::SOA,
             ResourceRecord::PTR => QueryType::PTR,
-            ResourceRecord::TXT => QueryType::TXT
+            ResourceRecord::TXT(_,_,_) => QueryType::TXT
         }
     }
 
@@ -306,7 +327,7 @@ impl ResourceRecord {
             ResourceRecord::UNKNOWN(ref domain, _, _, _) => Some(domain.clone()),
             ResourceRecord::SOA(_, _, _, _, _, _, _, _, _) => None,
             ResourceRecord::PTR => None,
-            ResourceRecord::TXT => None
+            ResourceRecord::TXT(ref domain, _, _) => Some(domain.clone())
         }
     }
 
@@ -321,7 +342,7 @@ impl ResourceRecord {
             ResourceRecord::UNKNOWN(_, _, _, ttl) => ttl,
             ResourceRecord::SOA(_, _, _, _, _, _, _, _, _) => 0,
             ResourceRecord::PTR => 0,
-            ResourceRecord::TXT => 0
+            ResourceRecord::TXT(_, _, ttl) => ttl
         }
     }
 }

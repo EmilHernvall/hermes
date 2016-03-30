@@ -66,6 +66,9 @@ table.entry_table td.entry_ttl {
                         {{#if host}}
                         <td class="entry_host">{{host}}</td>
                         {{/if}}
+                        {{#if txt}}
+                        <td class="entry_host">{{txt}}</td>
+                        {{/if}}
                         <td class="entry_ttl">{{ttl}}</td>
                     </tr>
                     {{/each}}

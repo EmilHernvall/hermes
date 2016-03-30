@@ -11,6 +11,7 @@ use ascii::AsciiString;
 use handlebars::Handlebars;
 use rustc_serialize::json::{self, ToJson, Json, DecodeResult, DecoderError};
 use rustc_serialize::Decodable;
+use chrono::*;
 
 use dns::cache::SynchronizedCache;
 use dns::protocol::ResourceRecord;
@@ -121,7 +122,10 @@ fn rr_to_json(id: u32, rr: &ResourceRecord) -> Json {
         },
         ResourceRecord::PTR => {
         },
-        ResourceRecord::TXT => {
+        ResourceRecord::TXT(ref domain, ref txt, ttl) => {
+            d.insert("domain".to_string(), domain.to_json());
+            d.insert("ttl".to_string(), ttl.to_json());
+            d.insert("txt".to_string(), txt.to_json());
         }
     }
 
@@ -278,7 +282,11 @@ pub fn handle_cache(request: Request,
                     json_output: bool,
                     cache: &SynchronizedCache) -> Result<()>
 {
+    let start_of_eq = Local::now();
+
     let cached_records = cache.list();
+
+    let end_of_list = Local::now();
 
     let mut cache_response = CacheResponse {
         ok: true,
@@ -300,12 +308,19 @@ pub fn handle_cache(request: Request,
         cache_response.records.push(cache_record);
     }
 
+    let end_of_object = Local::now();
+
     match json_output {
         true => {
             let output = match json::encode(&cache_response).ok() {
                 Some(x) => x,
                 None => return error_response(request, "Failed to encode response")
             };
+
+            let end_of_output = Local::now();
+            println!("list: {:?}", (end_of_list-start_of_eq).num_milliseconds());
+            println!("object: {:?}", (end_of_object-end_of_list).num_milliseconds());
+            println!("output: {:?}", (end_of_output-end_of_object).num_milliseconds());
 
             let mut response = Response::from_string(output);
             response.add_header(Header{
@@ -319,6 +334,11 @@ pub fn handle_cache(request: Request,
                 Some(x) => x,
                 None => return error_response(request, "Failed to encode response")
             };
+
+            let end_of_output = Local::now();
+            println!("list: {:?}", (end_of_list-start_of_eq).num_milliseconds());
+            println!("object: {:?}", (end_of_object-end_of_list).num_milliseconds());
+            println!("output: {:?}", (end_of_output-end_of_object).num_milliseconds());
 
             let mut response = Response::from_string(html_data);
             response.add_header(Header{

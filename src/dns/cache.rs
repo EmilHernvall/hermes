@@ -1,4 +1,4 @@
-use std::collections::{HashSet,HashMap};
+use std::collections::{HashSet,BTreeMap};
 use std::hash::{Hash,Hasher};
 use std::sync::mpsc::{channel, Sender};
 use std::thread::spawn;
@@ -63,13 +63,13 @@ impl RecordSet {
 }
 
 pub struct Cache {
-    records: HashMap<String, Arc<RecordSet>>
+    records: BTreeMap<String, Arc<RecordSet>>
 }
 
 impl Cache {
     pub fn new() -> Cache {
         Cache {
-            records: HashMap::new()
+            records: BTreeMap::new()
         }
     }
 
