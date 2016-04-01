@@ -72,25 +72,28 @@ impl<'a> DnsServer for DnsTcpServer<'a> {
 
         let socket = socket_attempt.unwrap();
         for wrap_stream in socket.incoming() {
-            if let Ok(stream) = wrap_stream {
-                let client = self.client.clone();
-                let authority = self.authority.clone();
-                let cache = self.cache.clone();
-                spawn(move || {
-                    match DnsTcpServer::handle_request(stream,
-                                                       &client,
-                                                       &authority,
-                                                       &cache) {
-                        Ok(_) => {},
-                        Err(err) => {
-                            println!("TCP request failed: {:?}", err);
-                        }
+            let stream = match wrap_stream {
+                Ok(stream) => stream,
+                Err(err) => {
+                    println!("Failed to accept TCP connection: {:?}", err);
+                    continue;
+                }
+            };
+
+            let client = self.client.clone();
+            let authority = self.authority.clone();
+            let cache = self.cache.clone();
+            spawn(move || {
+                match DnsTcpServer::handle_request(stream,
+                                                   &client,
+                                                   &authority,
+                                                   &cache) {
+                    Ok(_) => {},
+                    Err(err) => {
+                        println!("TCP request failed: {:?}", err);
                     }
-                });
-            }
-            else if let Err(err) = wrap_stream {
-                println!("Err: {:?}", err);
-            }
+                }
+            });
         }
 
         true

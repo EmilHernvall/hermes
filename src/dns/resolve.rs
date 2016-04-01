@@ -2,7 +2,7 @@ use std::io::Result;
 use std::vec::Vec;
 use std::io::{Error, ErrorKind};
 
-use dns::protocol::{QueryType, DnsPacket};
+use dns::protocol::{QueryType, DnsPacket, ResultCode};
 use dns::client::DnsClient;
 use dns::udp::DnsUdpClient;
 use dns::cache::SynchronizedCache;
@@ -26,6 +26,16 @@ impl<'a> DnsResolver<'a> {
         }
     }
 
+    /*pub fn resolve(&mut self,
+                   qname: &String,
+                   qtype: QueryType) -> Result<DnsPacket> {
+
+        self.client.send_query(qname,
+                               qtype.clone(),
+                               ("192.168.1.1", 53),
+                               true)
+    }*/
+
     pub fn resolve(&mut self,
                    qname: &String,
                    qtype: QueryType) -> Result<DnsPacket> {
@@ -46,7 +56,7 @@ impl<'a> DnsResolver<'a> {
 
         let mut tentative_ns = None;
 
-        // Find the closest 
+        // Find the closest
         let labels = qname.split('.').collect::<Vec<&str>>();
         for lbl_idx in 0..labels.len()+1 {
             let domain = labels[lbl_idx..labels.len()].join(".");
@@ -68,16 +78,18 @@ impl<'a> DnsResolver<'a> {
 
             // Start querying name servers
             loop {
-                //println!("attempting lookup of {} with ns {}", qname, ns);
+                println!("attempting lookup of {:?} {} with ns {}", qtype, qname, ns);
 
                 let ns_copy = ns.clone();
 
                 let server = (&*ns_copy, 53);
-                let response = try!(self.client.send_query(qname, qtype.clone(), server));
+                let response = try!(self.client.send_query(qname, qtype.clone(), server, false));
                 //response.print();
 
                 // If we've got an actual answer, we're done!
-                if response.answers.len() > 0 /*|| response.has_soa(qname)*/ {
+                if response.answers.len() > 0 ||
+                   response.header.rescode == ResultCode::NXDOMAIN {
+
                     final_result = Ok(response.clone());
                     self.cache.update(response.answers);
                     self.cache.update(response.authorities);
@@ -109,6 +121,7 @@ impl<'a> DnsResolver<'a> {
                     }
 
                     // If there's no NS record at all, we're screwed
+                    final_result = Ok(response.clone());
                     break;
                 }
             }

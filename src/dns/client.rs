@@ -6,5 +6,6 @@ pub trait DnsClient {
     fn send_query(&self,
                   qname: &String,
                   qtype: QueryType,
-                  server: (&str, u16)) -> Result<DnsPacket>;
+                  server: (&str, u16),
+                  recursive: bool) -> Result<DnsPacket>;
 }

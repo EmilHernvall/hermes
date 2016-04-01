@@ -1,17 +1,28 @@
 use std::io::{Result, Read};
 use std::io::{Error, ErrorKind};
+use std::collections::BTreeMap;
 
 pub trait PacketBuffer {
     fn read(&mut self) -> Result<u8>;
     fn get(&mut self, pos: usize) -> Result<u8>;
     fn get_range(&mut self, start: usize, len: usize) -> Result<&[u8]>;
     fn write(&mut self, val: u8) -> Result<()>;
+    fn set(&mut self, pos: usize, val: u8) -> Result<()>;
     fn pos(&self) -> usize;
     fn seek(&mut self, pos: usize) -> Result<()>;
     fn step(&mut self, steps: usize) -> Result<()>;
+    fn find_label(&self, label: &String) -> Option<usize>;
+    fn save_label(&mut self, label: &str, pos: usize);
 
     fn write_u8(&mut self, val: u8) -> Result<()> {
         try!(self.write(val));
+
+        Ok(())
+    }
+
+    fn set_u16(&mut self, pos: usize, val: u16) -> Result<()> {
+        try!(self.set(pos,(val >> 8) as u8));
+        try!(self.set(pos+1,(val & 0xFF) as u8));
 
         Ok(())
     }
@@ -38,7 +49,23 @@ pub trait PacketBuffer {
 
     fn write_qname(&mut self, qname: &String) -> Result<()> {
 
-        for label in qname.split(".") {
+        let split_str = qname.split(".").collect::<Vec<&str>>();
+
+        let mut jump_performed = false;
+        for (i, label) in split_str.iter().enumerate() {
+            let search_lbl = split_str[i..split_str.len()].join(".");
+            if let Some(prev_pos) = self.find_label(&search_lbl) {
+
+                let jump_inst = (prev_pos as u16) | 0xC000;
+                try!(self.write_u16(jump_inst));
+                jump_performed = true;
+
+                break;
+            }
+
+            let pos = self.pos();
+            self.save_label(&search_lbl, pos);
+
             let len = label.len();
             try!(self.write_u8(len as u8));
             for b in label.as_bytes() {
@@ -46,7 +73,9 @@ pub trait PacketBuffer {
             }
         }
 
-        try!(self.write_u8(0));
+        if !jump_performed {
+            try!(self.write_u8(0));
+        }
 
         Ok(())
     }
@@ -122,19 +151,29 @@ pub trait PacketBuffer {
 
 pub struct VectorPacketBuffer {
     pub buffer: Vec<u8>,
-    pub pos: usize
+    pub pos: usize,
+    pub label_lookup: BTreeMap<String, usize>
 }
 
 impl VectorPacketBuffer {
     pub fn new() -> VectorPacketBuffer {
         VectorPacketBuffer {
             buffer: Vec::new(),
-            pos: 0
+            pos: 0,
+            label_lookup: BTreeMap::new()
         }
     }
 }
 
 impl PacketBuffer for VectorPacketBuffer {
+    fn find_label(&self, label: &String) -> Option<usize> {
+        self.label_lookup.get(label).map(|x| *x)
+    }
+
+    fn save_label(&mut self, label: &str, pos: usize) {
+        self.label_lookup.insert(label.to_string(), pos);
+    }
+
     fn read(&mut self) -> Result<u8> {
         let res = self.buffer[self.pos];
         self.pos += 1;
@@ -153,6 +192,12 @@ impl PacketBuffer for VectorPacketBuffer {
     fn write(&mut self, val: u8) -> Result<()> {
         self.buffer.push(val);
         self.pos += 1;
+
+        Ok(())
+    }
+
+    fn set(&mut self, pos: usize, val: u8) -> Result<()> {
+        self.buffer[pos] = val;
 
         Ok(())
     }
@@ -191,6 +236,13 @@ impl<'a, T> StreamPacketBuffer<'a, T> where T: Read + 'a {
 }
 
 impl<'a, T> PacketBuffer for StreamPacketBuffer<'a, T> where T: Read + 'a {
+    fn find_label(&self, _: &String) -> Option<usize> {
+        None
+    }
+
+    fn save_label(&mut self, _: &str, _: usize) {
+    }
+
     fn read(&mut self) -> Result<u8> {
         while self.pos >= self.buffer.len() {
             let mut local_buffer = [0; 1];
@@ -228,6 +280,12 @@ impl<'a, T> PacketBuffer for StreamPacketBuffer<'a, T> where T: Read + 'a {
         Ok(())
     }
 
+    fn set(&mut self, pos: usize, val: u8) -> Result<()> {
+        self.buffer[pos] = val;
+
+        Ok(())
+    }
+
     fn pos(&self) -> usize {
         self.pos
     }
@@ -258,6 +316,13 @@ impl BytePacketBuffer {
 }
 
 impl PacketBuffer for BytePacketBuffer {
+    fn find_label(&self, _: &String) -> Option<usize> {
+        None
+    }
+
+    fn save_label(&mut self, _: &str, _: usize) {
+    }
+
     fn read(&mut self) -> Result<u8> {
         if self.pos >= 512 {
             return Err(Error::new(ErrorKind::InvalidInput, "End of buffer"));
@@ -291,6 +356,12 @@ impl PacketBuffer for BytePacketBuffer {
         Ok(())
     }
 
+    fn set(&mut self, pos: usize, val: u8) -> Result<()> {
+        self.buf[pos] = val;
+
+        Ok(())
+    }
+
     fn pos(&self) -> usize {
         self.pos
     }
@@ -314,8 +385,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_qname()
-    {
+    fn test_qname() {
         let mut buffer = VectorPacketBuffer::new();
 
         let instr1 = "a.google.com".to_string();
@@ -360,5 +430,42 @@ mod tests {
 
         // Make sure we're now at the end of the buffer
         assert_eq!(buffer.pos, buffer.buffer.len());
+    }
+
+    #[test]
+    fn test_write_qname() {
+        let mut buffer = VectorPacketBuffer::new();
+
+        match buffer.write_qname(&"ns1.google.com".to_string()) {
+            Ok(_) => {},
+            Err(_) => panic!()
+        }
+        match buffer.write_qname(&"ns2.google.com".to_string()) {
+            Ok(_) => {},
+            Err(_) => panic!()
+        }
+
+        assert_eq!(22, buffer.pos());
+
+        match buffer.seek(0) {
+            Ok(_) => {},
+            Err(_) => panic!()
+        }
+
+        let mut str1 = String::new();
+        match buffer.read_qname(&mut str1) {
+            Ok(_) => {},
+            Err(_) => panic!()
+        }
+
+        assert_eq!("ns1.google.com", str1);
+
+        let mut str2 = String::new();
+        match buffer.read_qname(&mut str2) {
+            Ok(_) => {},
+            Err(_) => panic!()
+        }
+
+        assert_eq!("ns2.google.com", str2);
     }
 }

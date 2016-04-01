@@ -1,7 +1,7 @@
-use std::io::Result;
+use std::io::{Result, Error, ErrorKind};
 
 use dns::resolve::DnsResolver;
-use dns::protocol::{DnsPacket, QueryType, ResourceRecord};
+use dns::protocol::{DnsPacket, QueryType, ResourceRecord, ResultCode};
 use dns::buffer::{PacketBuffer, VectorPacketBuffer};
 
 pub trait DnsServer {
@@ -13,15 +13,28 @@ pub fn resolve_cnames(lookup_list: &Vec<ResourceRecord>,
                       resolver: &mut DnsResolver)
 {
     for ref rec in lookup_list {
-        if let &ResourceRecord::CNAME(_, ref host, _) = *rec {
-            if let Ok(result2) = resolver.resolve(host,
-                                                  QueryType::A) {
+        match *rec {
+            &ResourceRecord::CNAME(_, ref host, _) => {
+                if let Ok(result2) = resolver.resolve(host,
+                                                      QueryType::A) {
 
-                let new_unmatched = result2.get_unresolved_cnames();
-                results.push(result2);
+                    let new_unmatched = result2.get_unresolved_cnames();
+                    results.push(result2);
 
-                resolve_cnames(&new_unmatched, results, resolver);
-            }
+                    resolve_cnames(&new_unmatched, results, resolver);
+                }
+            },
+            &ResourceRecord::SRV(_, _, _, _, ref srv, _) => {
+                if let Ok(result2) = resolver.resolve(srv,
+                                                      QueryType::A) {
+
+                    let new_unmatched = result2.get_unresolved_cnames();
+                    results.push(result2);
+
+                    resolve_cnames(&new_unmatched, results, resolver);
+                }
+            },
+            _ => {}
         }
     }
 }
@@ -31,40 +44,57 @@ pub fn build_response(request: &DnsPacket,
                       res_buffer: &mut VectorPacketBuffer,
                       max_size: usize) -> Result<()>
 {
+    if request.questions.len() == 0 {
+        return Err(Error::new(ErrorKind::InvalidInput, "Missing question"));
+    }
+
     let mut packet = DnsPacket::new();
 
     let mut results = Vec::new();
-    for question in &request.questions {
 
-        packet.questions.push(question.clone());
+    let question = &request.questions[0];
+    packet.questions.push(question.clone());
 
-        match resolver.resolve(&question.name,
-                               question.qtype.clone()) {
+    let rescode = match resolver.resolve(&question.name,
+                                         question.qtype.clone()) {
 
-            Ok(result) => {
-                let unmatched = result.get_unresolved_cnames();
-                results.push(result);
+        Ok(result) => {
+            let rescode = result.header.rescode.clone();
 
-                resolve_cnames(&unmatched, &mut results, resolver);
-            },
-            Err(err) => {
-                println!("Resolving {} failed: {:?}", question.name, err);
-            }
+            let unmatched = result.get_unresolved_cnames();
+            results.push(result);
+
+            resolve_cnames(&unmatched, &mut results, resolver);
+
+            rescode
+        },
+        Err(err) => {
+            println!("Got error: {:?}", err);
+            ResultCode::NXDOMAIN
         }
-    }
+    };
 
     print!("{:?} {}: ",
            request.questions[0].qtype,
            request.questions[0].name);
     for result in results {
-        for answer in result.answers {
-            print!("{:?} ", answer);
-            packet.answers.push(answer);
+        for rec in result.answers {
+            print!("{:?} ", rec);
+            packet.answers.push(rec);
+        }
+        for rec in result.authorities {
+            print!("{:?} ", rec);
+            packet.authorities.push(rec);
+        }
+        for rec in result.resources {
+            print!("{:?} ", rec);
+            packet.resources.push(rec);
         }
     }
     println!("");
 
     packet.header.id = request.header.id;
+    packet.header.rescode = rescode;
     packet.header.recursion_available = true;
     packet.header.response = true;
 

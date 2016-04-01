@@ -5,7 +5,7 @@ use std::fs::File;
 use std::path::Path;
 
 use dns::buffer::{VectorPacketBuffer, PacketBuffer, StreamPacketBuffer};
-use dns::protocol::{DnsPacket,ResourceRecord,QueryType};
+use dns::protocol::{DnsPacket,ResourceRecord,QueryType,ResultCode};
 
 #[derive(Clone,Debug)]
 pub struct Zone {
@@ -221,6 +221,20 @@ impl Authority {
                 packet.answers.push(rec.clone());
             }
 
+        }
+
+        if packet.answers.len() == 0 {
+            packet.header.rescode = ResultCode::NXDOMAIN;
+
+            packet.authorities.push(ResourceRecord::SOA(zone.domain.clone(),
+                                                        zone.mname.clone(),
+                                                        zone.rname.clone(),
+                                                        zone.serial,
+                                                        zone.refresh,
+                                                        zone.retry,
+                                                        zone.expire,
+                                                        zone.minimum,
+                                                        zone.minimum));
         }
 
         Some(packet)

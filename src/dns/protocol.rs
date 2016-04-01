@@ -4,9 +4,9 @@ use std::io::{Result, Read};
 //use std::io::{Error, ErrorKind};
 use rand::random;
 
-use dns::buffer::PacketBuffer;
+use dns::buffer::{PacketBuffer, VectorPacketBuffer};
 
-#[derive(PartialEq,Debug,Clone)]
+#[derive(PartialEq,Eq,Debug,Clone)]
 pub enum QueryType {
     UNKNOWN = 0,
     A = 1,
@@ -160,7 +160,7 @@ impl ResourceRecord {
                 try!(buffer.step(data_len as usize));
 
                 return Ok(ResourceRecord::UNKNOWN(domain,
-                                                  qtype as u16,
+                                                  qtype_num,
                                                   data_len,
                                                   ttl));
             }
@@ -168,7 +168,9 @@ impl ResourceRecord {
     }
 
     pub fn write<T: PacketBuffer>(&self,
-                                  buffer: &mut T) -> Result<()> {
+                                  buffer: &mut T) -> Result<usize> {
+
+        let start_pos = buffer.pos();
 
         match *self {
             ResourceRecord::A(ref host, ref addr, ttl) => {
@@ -200,40 +202,60 @@ impl ResourceRecord {
                 try!(buffer.write_u16(QueryType::NS as u16));
                 try!(buffer.write_u16(1));
                 try!(buffer.write_u32(ttl));
-                try!(buffer.write_u16(host.len() as u16 + 2));
+
+                let pos = buffer.pos();
+                try!(buffer.write_u16(0));
 
                 try!(buffer.write_qname(host));
+
+                let size = buffer.pos() - (pos + 2);
+                try!(buffer.set_u16(pos, size as u16));
             },
             ResourceRecord::CNAME(ref domain, ref addr, ttl) => {
                 try!(buffer.write_qname(domain));
                 try!(buffer.write_u16(QueryType::CNAME as u16));
                 try!(buffer.write_u16(1));
                 try!(buffer.write_u32(ttl));
-                try!(buffer.write_u16(addr.len() as u16 + 2));
+
+                let pos = buffer.pos();
+                try!(buffer.write_u16(0));
 
                 try!(buffer.write_qname(addr));
+
+                let size = buffer.pos() - (pos + 2);
+                try!(buffer.set_u16(pos, size as u16));
             },
             ResourceRecord::SRV(ref domain, priority, weight, port, ref srv, ttl) => {
                 try!(buffer.write_qname(domain));
                 try!(buffer.write_u16(QueryType::SRV as u16));
                 try!(buffer.write_u16(1));
                 try!(buffer.write_u32(ttl));
-                try!(buffer.write_u16(srv.len() as u16 + 8));
+
+                let pos = buffer.pos();
+                try!(buffer.write_u16(0));
 
                 try!(buffer.write_u16(priority));
                 try!(buffer.write_u16(weight));
                 try!(buffer.write_u16(port));
                 try!(buffer.write_qname(srv));
+
+                let size = buffer.pos() - (pos + 2);
+                try!(buffer.set_u16(pos, size as u16));
             },
             ResourceRecord::MX(ref domain, priority, ref mx, ttl) => {
                 try!(buffer.write_qname(domain));
                 try!(buffer.write_u16(QueryType::MX as u16));
                 try!(buffer.write_u16(1));
                 try!(buffer.write_u32(ttl));
-                try!(buffer.write_u16(mx.len() as u16 + 4));
+
+                let pos = buffer.pos();
+                try!(buffer.write_u16(0));
 
                 try!(buffer.write_u16(priority));
                 try!(buffer.write_qname(mx));
+
+                let size = buffer.pos() - (pos + 2);
+                try!(buffer.set_u16(pos, size as u16));
             },
             ResourceRecord::SOA(ref domain,
                                 ref mname,
@@ -249,9 +271,9 @@ impl ResourceRecord {
                 try!(buffer.write_u16(QueryType::SOA as u16));
                 try!(buffer.write_u16(1));
                 try!(buffer.write_u32(ttl));
-                try!(buffer.write_u16(mname.len() as u16 + 2 +
-                                      rname.len() as u16 + 2 +
-                                      5*4));
+
+                let pos = buffer.pos();
+                try!(buffer.write_u16(0));
 
                 try!(buffer.write_qname(mname));
                 try!(buffer.write_qname(rname));
@@ -260,6 +282,9 @@ impl ResourceRecord {
                 try!(buffer.write_u32(retry));
                 try!(buffer.write_u32(expire));
                 try!(buffer.write_u32(minimum));
+
+                let size = buffer.pos() - (pos + 2);
+                try!(buffer.set_u16(pos, size as u16));
             },
             ResourceRecord::TXT(ref domain, ref txt, ttl) => {
                 try!(buffer.write_qname(domain));
@@ -273,32 +298,11 @@ impl ResourceRecord {
                 }
             },
             _ => {
+                println!("Skipping record: {:?}", self);
             }
         }
 
-        Ok(())
-    }
-
-    pub fn binary_len<T: PacketBuffer>(&self,
-                                       buffer: &T) -> usize {
-
-        match *self {
-            ResourceRecord::A(ref host, _, _) => {
-                buffer.qname_len(host) + 2 + 2 + 4 + 2 + 4
-            },
-            //ResourceRecord::AAAA(ref host, ref addr, ttl) => {
-            //},
-            //ResourceRecord::NS(ref domain, ref addr, ttl) => {
-            //},
-            ResourceRecord::CNAME(ref domain, ref addr, _) => {
-                buffer.qname_len(domain) + 2 + 2 + 4 + 2 + buffer.qname_len(addr)
-            },
-            //ResourceRecord::SRV(ref domain, priority, weight, port, ref srv, ttl) => {
-            //},
-            //ResourceRecord::MX(ref domain, priority, ref mx, ttl) => {
-            //},
-            _ => 0
-        }
+        Ok(buffer.pos() - start_pos)
     }
 
     pub fn get_querytype(&self) -> QueryType {
@@ -325,7 +329,7 @@ impl ResourceRecord {
             ResourceRecord::SRV(ref domain, _, _, _, _, _) => Some(domain.clone()),
             ResourceRecord::MX(ref domain, _, _, _) => Some(domain.clone()),
             ResourceRecord::UNKNOWN(ref domain, _, _, _) => Some(domain.clone()),
-            ResourceRecord::SOA(_, _, _, _, _, _, _, _, _) => None,
+            ResourceRecord::SOA(ref domain, _, _, _, _, _, _, _, _) => Some(domain.clone()),
             ResourceRecord::PTR => None,
             ResourceRecord::TXT(ref domain, _, _) => Some(domain.clone())
         }
@@ -340,9 +344,33 @@ impl ResourceRecord {
             ResourceRecord::SRV(_, _, _, _, _, ttl) => ttl,
             ResourceRecord::MX(_, _, _, ttl) => ttl,
             ResourceRecord::UNKNOWN(_, _, _, ttl) => ttl,
-            ResourceRecord::SOA(_, _, _, _, _, _, _, _, _) => 0,
+            ResourceRecord::SOA(_, _, _, _, _, _, _, _, ttl) => ttl,
             ResourceRecord::PTR => 0,
             ResourceRecord::TXT(_, _, ttl) => ttl
+        }
+    }
+}
+
+#[derive(Clone,Debug,PartialEq,Eq)]
+pub enum ResultCode {
+    NOERROR = 0,
+    FORMERR = 1,
+    SERVFAIL = 2,
+    NXDOMAIN = 3,
+    NOTIMP = 4,
+    REFUSED = 5
+}
+
+impl ResultCode {
+    pub fn from_num(num: u8) -> ResultCode {
+        match num {
+            0 => ResultCode::NOERROR,
+            1 => ResultCode::FORMERR,
+            2 => ResultCode::SERVFAIL,
+            3 => ResultCode::NXDOMAIN,
+            4 => ResultCode::NOTIMP,
+            5 => ResultCode::REFUSED,
+            _ => ResultCode::NOERROR
         }
     }
 }
@@ -357,7 +385,7 @@ pub struct DnsHeader {
     pub opcode: u8, // 4 bits
     pub response: bool, // 1 bit
 
-    pub rescode: u8, // 4 bits
+    pub rescode: ResultCode, // 4 bits
     pub checking_disabled: bool, // 1 bit
     pub authed_data: bool, // 1 bit
     pub z: bool, // 1 bit
@@ -379,7 +407,7 @@ impl DnsHeader {
                     opcode: 0,
                     response: false,
 
-                    rescode: 0,
+                    rescode: ResultCode::NOERROR,
                     checking_disabled: false,
                     authed_data: false,
                     z: false,
@@ -400,7 +428,7 @@ impl DnsHeader {
                               (self.opcode << 3) |
                               ((self.response as u8) << 7) as u8) );
 
-        try!(buffer.write_u8( (self.rescode) |
+        try!(buffer.write_u8( (self.rescode.clone() as u8) |
                               ((self.checking_disabled as u8) << 4) |
                               ((self.authed_data as u8) << 5) |
                               ((self.z as u8) << 6) |
@@ -430,7 +458,7 @@ impl DnsHeader {
         self.opcode = (a >> 3) & 0x0F;
         self.response = (a & (1 << 7)) > 0;
 
-        self.rescode = b & 0x0F;
+        self.rescode = ResultCode::from_num(b & 0x0F);
         self.checking_disabled = (b & (1 << 4)) > 0;
         self.authed_data = (b & (1 << 5)) > 0;
         self.z = (b & (1 << 6)) > 0;
@@ -457,7 +485,7 @@ impl fmt::Display for DnsHeader {
         try!(write!(f, "\topcode: {0}\n", self.opcode));
         try!(write!(f, "\tresponse: {0}\n", self.response));
 
-        try!(write!(f, "\trescode: {0}\n", self.rescode));
+        try!(write!(f, "\trescode: {:?}\n", self.rescode));
         try!(write!(f, "\tchecking_disabled: {0}\n", self.checking_disabled));
         try!(write!(f, "\tauthed_data: {0}\n", self.authed_data));
         try!(write!(f, "\tz: {0}\n", self.z));
@@ -472,7 +500,7 @@ impl fmt::Display for DnsHeader {
     }
 }
 
-#[derive(Debug,Clone)]
+#[derive(Debug,Clone,PartialEq,Eq)]
 pub struct DnsQuestion {
     pub name: String,
     pub qtype: QueryType
@@ -561,6 +589,7 @@ impl DnsPacket {
         }
         for _ in 0..result.header.resource_entries {
             let rec = try!(ResourceRecord::read(buffer));
+            println!("{:?}", rec);
             result.resources.push(rec);
         }
 
@@ -680,24 +709,32 @@ impl DnsPacket {
                                   buffer: &mut T,
                                   max_size: usize) -> Result<()>
     {
+        let mut test_buffer = VectorPacketBuffer::new();
+
         let mut size = self.header.binary_len();
         for ref question in &self.questions {
             size += question.binary_len(buffer);
+            try!(question.write(&mut test_buffer));
         }
 
-        let mut answer_count = self.answers.len();
+        let mut record_count = self.answers.len() + self.authorities.len() + self.resources.len();
 
-        for (i, answer) in self.answers.iter().enumerate() {
-            size += answer.binary_len(buffer);
+        for (i, rec) in self.answers.iter().chain(self.authorities.iter()).chain(self.resources.iter()).enumerate() {
+            size += try!(rec.write(&mut test_buffer));
             if size > max_size {
-                answer_count = i;
+                record_count = i;
+                self.header.truncated_message = true;
                 break;
+            } else if i < self.answers.len() {
+                self.header.answers += 1;
+            } else if i < self.answers.len() + self.authorities.len() {
+                self.header.authoritative_entries += 1;
+            } else {
+                self.header.resource_entries += 1;
             }
         }
 
         self.header.questions = self.questions.len() as u16;
-        self.header.answers = answer_count as u16;
-        self.header.truncated_message = answer_count < self.answers.len();
 
         try!(self.header.write(buffer));
 
@@ -705,8 +742,8 @@ impl DnsPacket {
             try!(question.write(buffer));
         }
 
-        for answer in self.answers.iter().take(answer_count) {
-            try!(answer.write(buffer));
+        for rec in self.answers.iter().chain(self.authorities.iter()).chain(self.resources.iter()).take(record_count) {
+            try!(rec.write(buffer));
         }
 
         Ok(())
@@ -728,7 +765,37 @@ impl DnsPacket {
     }*/
 }
 
-#[test]
-fn test_dns_packet()
-{
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+    use std::net::Ipv4Addr;
+    use dns::buffer::{PacketBuffer, VectorPacketBuffer};
+
+    #[test]
+    fn test_packet() {
+        let mut packet = DnsPacket::new();
+        packet.header.id = 1337;
+        packet.header.response = true;
+
+        packet.questions.push(DnsQuestion::new(&"google.com".to_string(), QueryType::NS));
+        //packet.answers.push(ResourceRecord::A("ns1.google.com".to_string(), "127.0.0.1".parse::<Ipv4Addr>().unwrap(), 3600));
+        packet.answers.push(ResourceRecord::NS("google.com".to_string(), "ns1.google.com".to_string(), 3600));
+        packet.answers.push(ResourceRecord::NS("google.com".to_string(), "ns2.google.com".to_string(), 3600));
+        packet.answers.push(ResourceRecord::NS("google.com".to_string(), "ns3.google.com".to_string(), 3600));
+        packet.answers.push(ResourceRecord::NS("google.com".to_string(), "ns4.google.com".to_string(), 3600));
+
+        let mut buffer = VectorPacketBuffer::new();
+        packet.write(&mut buffer, 0xFFFF).unwrap();
+
+        buffer.seek(0).unwrap();
+
+        let parsed_packet = DnsPacket::from_buffer(&mut buffer).unwrap();
+
+        assert_eq!(packet.questions[0], parsed_packet.questions[0]);
+        assert_eq!(packet.answers[0], parsed_packet.answers[0]);
+        assert_eq!(packet.answers[1], parsed_packet.answers[1]);
+        assert_eq!(packet.answers[2], parsed_packet.answers[2]);
+        assert_eq!(packet.answers[3], parsed_packet.answers[3]);
+    }
 }

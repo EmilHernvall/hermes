@@ -29,7 +29,6 @@ pub struct DnsUdpClient {
     pub pending_queries: Arc<Mutex<Vec<PendingQuery>>>
 }
 
-#[allow(dead_code)]
 impl DnsUdpClient {
     pub fn new() -> DnsUdpClient {
         DnsUdpClient {
@@ -94,7 +93,8 @@ impl DnsClient for DnsUdpClient {
     fn send_query(&self,
                   qname: &String,
                   qtype: QueryType,
-                  server: (&str, u16)) -> Result<DnsPacket> {
+                  server: (&str, u16),
+                  recursive: bool) -> Result<DnsPacket> {
 
         // Prepare request
         let mut req_buffer = BytePacketBuffer::new();
@@ -105,6 +105,7 @@ impl DnsClient for DnsUdpClient {
             seq_cell.set(head.id+1);
         }
         head.questions = 1;
+        head.recursion_desired = recursive;
         try!(head.write(&mut req_buffer));
 
         let question = DnsQuestion::new(&qname, qtype);
@@ -164,19 +165,24 @@ impl<'a> DnsUdpServer<'a> {
                 let mut res_buffer = VectorPacketBuffer::new();
 
                 let mut resolver = DnsResolver::new(&client, &authority, &cache);
-                if let Ok(_) = build_response(&request,
-                                              &mut resolver,
-                                              &mut res_buffer,
-                                              512) {
+                match build_response(&request,
+                                     &mut resolver,
+                                     &mut res_buffer,
+                                     512) {
 
-                    let len = res_buffer.pos();
+                    Ok(_) => {
+                        let len = res_buffer.pos();
 
-                    if let Ok(data) = res_buffer.get_range(0, len) {
-                        if let Err(err) = socket_clone.send_to(data, src) {
-                            println!("UDP send failed: {:?}", err);
+                        if let Ok(data) = res_buffer.get_range(0, len) {
+                            if let Err(err) = socket_clone.send_to(data, src) {
+                                println!("UDP send failed: {:?}", err);
+                            }
                         }
+                    },
+                    Err(err) => {
+                        println!("UDP request failed: {:?}", err);
                     }
-            }
+                }
             });
         }
 
