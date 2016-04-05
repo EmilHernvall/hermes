@@ -8,74 +8,43 @@ extern crate ascii;
 extern crate handlebars;
 extern crate regex;
 
-use std::env;
+//use std::env;
 use std::sync::Arc;
-use std::thread::spawn;
 use std::net::{Ipv4Addr, Ipv6Addr};
 
 use dns::server::DnsServer;
 use dns::udp::DnsUdpServer;
-use dns::udp::DnsUdpClient;
 use dns::tcp::DnsTcpServer;
-use dns::resolve::DnsResolver;
-use dns::cache::SynchronizedCache;
-use dns::protocol::{QueryType,ResourceRecord};
+use dns::protocol::ResourceRecord;
 use dns::web::run_webserver;
-use dns::authority::Authority;
+use dns::context::ServerContext;
 
 fn main() {
 
-    let authority = Arc::new(Authority::new());
-    let _ = authority.load();
-
-    let client = Arc::new(DnsUdpClient::new());
-    client.run().unwrap();
-
-    let mut cache = SynchronizedCache::new();
-    cache.run();
-    cache.update(get_rootservers());
-
-    if let Some(arg1) = env::args().nth(1) {
-
-        let mut resolver = DnsResolver::new(&client, &authority, &cache);
-        let res = resolver.resolve(&arg1, QueryType::A);
-        if let Ok(result) = res {
-            result.print();
-        } else if let Err(err) = res {
-            println!("error: {}", err);
+    let mut context = Arc::new(ServerContext::new());
+    match Arc::get_mut(&mut context).unwrap().initialize() {
+        Ok(_) => {},
+        Err(e) => {
+            println!("Server failed to initialize: {:?}", e);
+            return;
         }
     }
-    else {
-        //println!("usage: ./resolve <domain>");
 
-        let port = 53;
+    let _ = context.cache.update(&get_rootservers());
 
-        println!("Listening on port {}", port);
+    //let _ = env::args().nth(1);
 
-        let udp_client_clone = client.clone();
-        let udp_cache_clone = cache.clone();
-        let udp_authority_clone = authority.clone();
-        let _ = spawn(move|| {
-            let mut server = DnsUdpServer::new(udp_client_clone,
-                                               udp_authority_clone,
-                                               &udp_cache_clone,
-                                               port);
-            server.run();
-        });
+    let port = 53;
 
-        let tcp_client_clone = client.clone();
-        let tcp_cache_clone = cache.clone();
-        let tcp_authority_clone = authority.clone();
-        let _ = spawn(move|| {
-            let mut server = DnsTcpServer::new(tcp_client_clone,
-                                               tcp_authority_clone,
-                                               &tcp_cache_clone,
-                                               port);
-            server.run();
-        });
+    println!("Listening on port {}", port);
 
-        run_webserver(&*authority, &cache);
-    }
+    let udp_server = DnsUdpServer::new(context.clone());
+    udp_server.run_server();
+
+    let tcp_server = DnsTcpServer::new(context.clone());
+    tcp_server.run_server();
+
+    run_webserver(context);
 }
 
 fn get_rootservers() -> Vec<ResourceRecord>

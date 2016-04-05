@@ -5,12 +5,12 @@ use dns::protocol::{DnsPacket, QueryType, ResourceRecord, ResultCode};
 use dns::buffer::{PacketBuffer, VectorPacketBuffer};
 
 pub trait DnsServer {
-    fn run(&mut self) -> bool;
+    fn run_server(self) -> bool;
 }
 
 pub fn resolve_cnames(lookup_list: &Vec<ResourceRecord>,
                       results: &mut Vec<DnsPacket>,
-                      resolver: &mut DnsResolver)
+                      resolver: &mut Box<DnsResolver>)
 {
     for ref rec in lookup_list {
         match *rec {
@@ -40,7 +40,7 @@ pub fn resolve_cnames(lookup_list: &Vec<ResourceRecord>,
 }
 
 pub fn build_response(request: &DnsPacket,
-                      resolver: &mut DnsResolver,
+                      resolver: &mut Box<DnsResolver>,
                       res_buffer: &mut VectorPacketBuffer,
                       max_size: usize) -> Result<()>
 {

@@ -1,9 +1,8 @@
 use std::collections::{HashSet,BTreeMap};
 use std::hash::{Hash,Hasher};
-use std::sync::mpsc::{channel, Sender};
-use std::thread::spawn;
+use std::sync::{Arc, RwLock};
 use std::clone::Clone;
-use std::sync::Arc;
+use std::io::{Write,Result,Error,ErrorKind};
 
 use chrono::*;
 
@@ -155,33 +154,18 @@ impl Cache {
     }
 }
 
-pub enum CacheRequest {
-    Update(Vec<ResourceRecord>),
-    Query(String, QueryType),
-    List
-}
-
-pub enum CacheResponse {
-    UpdateOk,
-    QueryOk(Option<DnsPacket>),
-    ListOk(Vec<Arc<RecordSet>>)
-}
-
-pub type CacheMessage = (CacheRequest, Sender<CacheResponse>);
-
-#[derive(Clone)]
 pub struct SynchronizedCache {
-    pub tx: Option<Sender<CacheMessage>>
+    pub cache: RwLock<Cache>
 }
 
 impl SynchronizedCache {
     pub fn new() -> SynchronizedCache {
         SynchronizedCache {
-            tx: None
+            cache: RwLock::new(Cache::new())
         }
     }
 
-    pub fn run(&mut self) {
+    /*pub fn run(&mut self) {
 
         let (req_tx, req_rx) = channel();
 
@@ -212,47 +196,43 @@ impl SynchronizedCache {
                 }
             }
         });
-    }
+    }*/
 
-    pub fn list(&self) -> Vec<Arc<RecordSet>> {
-        if let Some(ref req_tx) = self.tx {
-            let (res_tx, res_rx) = channel();
-            let _ = req_tx.send((CacheRequest::List, res_tx));
+    pub fn list(&self) -> Result<Vec<Arc<RecordSet>>> {
+        let cache = match self.cache.read() {
+            Ok(x) => x,
+            Err(_) => return Err(Error::new(ErrorKind::Other, "Failed to acquire lock"))
+        };
 
-            if let Ok(CacheResponse::ListOk(res)) = res_rx.recv() {
-                return res;
-            }
+        let mut list = Vec::new();
+
+        for (_, rs) in &cache.records {
+            list.push(rs.clone());
         }
 
-        Vec::new()
+        Ok(list)
     }
 
     pub fn lookup(&self,
-                  qname: String,
-                  qtype: QueryType) -> Option<DnsPacket> {
+                  qname: &String,
+                  qtype: QueryType) -> Result<Option<DnsPacket>> {
 
-        if let Some(ref req_tx) = self.tx {
-            let (res_tx, res_rx) = channel();
-            let _ = req_tx.send((CacheRequest::Query(qname, qtype), res_tx));
+        let mut cache = match self.cache.write() {
+            Ok(x) => x,
+            Err(_) => return Err(Error::new(ErrorKind::Other, "Failed to acquire lock"))
+        };
 
-            if let Ok(CacheResponse::QueryOk(res)) = res_rx.recv() {
-                return res;
-            }
-        }
-
-        None
+        Ok(cache.lookup(qname, qtype))
     }
 
-    pub fn update(&self, records: Vec<ResourceRecord>) -> bool {
-        if let Some(ref req_tx) = self.tx {
-            let (res_tx, res_rx) = channel();
-            let _ = req_tx.send((CacheRequest::Update(records), res_tx));
+    pub fn update(&self, records: &Vec<ResourceRecord>) -> Result<()> {
+        let mut cache = match self.cache.write() {
+            Ok(x) => x,
+            Err(_) => return Err(Error::new(ErrorKind::Other, "Failed to acquire lock"))
+        };
 
-            if let Ok(CacheResponse::UpdateOk) = res_rx.recv() {
-                return true;
-            }
-        }
+        cache.update(records);
 
-        false
+        Ok(())
     }
 }

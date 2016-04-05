@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap,BTreeSet};
 use std::sync::{RwLock, LockResult, RwLockReadGuard, RwLockWriteGuard};
-use std::io::{Write,Result};
+use std::io::{Write,Result,Error,ErrorKind};
 use std::fs::File;
 use std::path::Path;
 
@@ -161,16 +161,16 @@ impl Authority {
         }
     }
 
-    pub fn load(&self)
+    pub fn load(&self) -> Result<()>
     {
-        let mut zones = match self.zones.write().ok() {
-            Some(x) => x,
-            None => return
+        let mut zones = match self.zones.write() {
+            Ok(x) => x,
+            Err(_) => return Err(Error::new(ErrorKind::Other, "Failed to acquire lock"))
         };
 
-        if let Err(e) = zones.load() {
-            println!("Failed to load zones: {:?}", e);
-        }
+        try!(zones.load());
+
+        Ok(())
     }
 
     pub fn query(&self, qname: &String, qtype: QueryType) -> Option<DnsPacket>

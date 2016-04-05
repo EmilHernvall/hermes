@@ -7,8 +7,6 @@ use std::io::{Error, ErrorKind};
 use std::marker::{Send, Sync};
 use std::cell::Cell;
 
-use dns::resolve::DnsResolver;
-use dns::cache::SynchronizedCache;
 use dns::client::DnsClient;
 use dns::server::{DnsServer, build_response};
 use dns::protocol::{DnsHeader,
@@ -16,7 +14,7 @@ use dns::protocol::{DnsHeader,
                     DnsQuestion,
                     QueryType};
 use dns::buffer::{PacketBuffer, BytePacketBuffer, VectorPacketBuffer};
-use dns::authority::Authority;
+use dns::context::ServerContext;
 
 pub struct PendingQuery {
     seq: u16,
@@ -130,23 +128,14 @@ impl DnsClient for DnsUdpClient {
     }
 }
 
-pub struct DnsUdpServer<'a> {
-    client: Arc<DnsUdpClient>,
-    authority: Arc<Authority>,
-    cache: &'a SynchronizedCache,
-    port: u16
+pub struct DnsUdpServer {
+    context: Arc<ServerContext>
 }
 
-impl<'a> DnsUdpServer<'a> {
-    pub fn new(client: Arc<DnsUdpClient>,
-               authority: Arc<Authority>,
-               cache: &'a SynchronizedCache,
-               port: u16) -> DnsUdpServer<'a> {
+impl DnsUdpServer {
+    pub fn new(context: Arc<ServerContext>) -> DnsUdpServer {
         DnsUdpServer {
-            client: client,
-            authority: authority,
-            cache: cache,
-            port: port
+            context: context
         }
     }
 
@@ -158,13 +147,11 @@ impl<'a> DnsUdpServer<'a> {
         let request = try!(DnsPacket::from_buffer(&mut req_buffer));
 
         if let Ok(socket_clone) = socket.try_clone() {
-            let client = self.client.clone();
-            let authority = self.authority.clone();
-            let cache = self.cache.clone();
+            let context = self.context.clone();
             spawn(move || {
                 let mut res_buffer = VectorPacketBuffer::new();
 
-                let mut resolver = DnsResolver::new(&client, &authority, &cache);
+                let mut resolver = context.create_resolver(context.clone());
                 match build_response(&request,
                                      &mut resolver,
                                      &mut res_buffer,
@@ -190,9 +177,9 @@ impl<'a> DnsUdpServer<'a> {
     }
 }
 
-impl<'a> DnsServer for DnsUdpServer<'a> {
-    fn run(&mut self) -> bool {
-        let socket = match UdpSocket::bind(("0.0.0.0", self.port)) {
+impl DnsServer for DnsUdpServer {
+    fn run_server(self) -> bool {
+        let socket = match UdpSocket::bind(("0.0.0.0", self.context.listen_port)) {
             Ok(x) => x,
             Err(e) => {
                 println!("Failed to start UDP DNS server: {:?}", e);
@@ -200,13 +187,17 @@ impl<'a> DnsServer for DnsUdpServer<'a> {
             }
         };
 
-        loop {
-            match self.handle_request(&socket) {
-                Ok(_) => {},
-                Err(err) => {
-                    println!("UDP request failed: {:?}", err);
+        spawn(move || {
+            loop {
+                match self.handle_request(&socket) {
+                    Ok(_) => {},
+                    Err(err) => {
+                        println!("UDP request failed: {:?}", err);
+                    }
                 }
             }
-        }
+        });
+
+        true
     }
 }

@@ -4,6 +4,7 @@ use std::fmt::Write;
 use std::net::{Ipv4Addr,Ipv6Addr};
 use std::io::{Result, Error, ErrorKind, Read};
 use std::error::Error as RealError;
+use std::sync::Arc;
 
 use regex::Regex;
 use tiny_http::{Server, Response, StatusCode, Header, HeaderField, Method, Request};
@@ -16,6 +17,7 @@ use chrono::*;
 use dns::cache::SynchronizedCache;
 use dns::protocol::ResourceRecord;
 use dns::authority::{Authority, Zone};
+use dns::context::ServerContext;
 
 trait FormDataDecodable<T> {
     fn from_formdata(fields: Vec<(String, String)>) -> Result<T>;
@@ -168,8 +170,7 @@ impl ToJson for CacheResponse {
     }
 }
 
-pub fn run_webserver(authority: &Authority,
-                     cache: &SynchronizedCache)
+pub fn run_webserver(context: Arc<ServerContext>)
 {
     let mut handlebars = Handlebars::new();
     if !handlebars.register_template_file("layout", Path::new("templates/layout.html")).is_ok() {
@@ -230,7 +231,7 @@ pub fn run_webserver(authority: &Authority,
             match handle_cache(request,
                                &mut handlebars,
                                json_output,
-                               cache) {
+                               &context.cache) {
                 Ok(_) => {},
                 Err(e) => println!("HTTP request failed: {:?}", e)
             }
@@ -242,7 +243,7 @@ pub fn run_webserver(authority: &Authority,
                                    &mut handlebars,
                                    json_input,
                                    json_output,
-                                   authority) {
+                                   &context.authority) {
                 Ok(_) => {},
                 Err(e) => println!("HTTP request failed: {:?}", e)
             }
@@ -264,7 +265,7 @@ pub fn run_webserver(authority: &Authority,
                               &zone.to_string(),
                               json_input,
                               json_output,
-                              authority) {
+                              &context.authority) {
                 Ok(_) => {},
                 Err(e) => println!("HTTP request failed: {:?}", e)
             }
@@ -284,7 +285,10 @@ pub fn handle_cache(request: Request,
 {
     let start_of_eq = Local::now();
 
-    let cached_records = cache.list();
+    let cached_records = match cache.list() {
+        Ok(x) => x,
+        Err(_) => Vec::new()
+    };
 
     let end_of_list = Local::now();
 

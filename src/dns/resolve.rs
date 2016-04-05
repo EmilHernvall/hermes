@@ -1,51 +1,70 @@
 use std::io::Result;
 use std::vec::Vec;
 use std::io::{Error, ErrorKind};
+use std::sync::Arc;
 
 use dns::protocol::{QueryType, DnsPacket, ResultCode};
 use dns::client::DnsClient;
-use dns::udp::DnsUdpClient;
-use dns::cache::SynchronizedCache;
-use dns::authority::Authority;
+use dns::context::ServerContext;
 
-pub struct DnsResolver<'a> {
-    client: &'a DnsUdpClient,
-    authority: &'a Authority,
-    cache: &'a SynchronizedCache
+pub trait DnsResolver {
+    fn resolve(&mut self,
+               qname: &String,
+               qtype: QueryType) -> Result<DnsPacket>;
 }
 
-impl<'a> DnsResolver<'a> {
-    pub fn new(client: &'a DnsUdpClient,
-               authority: &'a Authority,
-               cache: &'a SynchronizedCache) -> DnsResolver<'a> {
+pub struct ForwardingDnsResolver {
+    context: Arc<ServerContext>
+}
 
-        DnsResolver {
-            client: client,
-            authority: authority,
-            cache: cache
+impl ForwardingDnsResolver {
+    pub fn new(context: Arc<ServerContext>) -> ForwardingDnsResolver {
+        ForwardingDnsResolver {
+            context: context
         }
     }
+}
 
-    /*pub fn resolve(&mut self,
-                   qname: &String,
-                   qtype: QueryType) -> Result<DnsPacket> {
+impl DnsResolver for ForwardingDnsResolver {
+    fn resolve(&mut self,
+               qname: &String,
+               qtype: QueryType) -> Result<DnsPacket> {
 
-        self.client.send_query(qname,
-                               qtype.clone(),
-                               ("192.168.1.1", 53),
-                               true)
-    }*/
+        if let Some(ref server) = self.context.forward_server {
+            let &(ref host, port) = server;
+            self.context.udp_client.send_query(qname,
+                                               qtype.clone(),
+                                               (host.as_str(), port),
+                                               true)
+        } else {
+            Err(Error::new(ErrorKind::NotFound, "No DNS server found"))
+        }
+    }
+}
 
-    pub fn resolve(&mut self,
-                   qname: &String,
-                   qtype: QueryType) -> Result<DnsPacket> {
+pub struct RecursiveDnsResolver {
+    context: Arc<ServerContext>
+}
 
-        if let Some(qr) = self.authority.query(qname, qtype.clone()) {
+impl RecursiveDnsResolver {
+    pub fn new(context: Arc<ServerContext>) -> RecursiveDnsResolver {
+        RecursiveDnsResolver {
+            context: context
+        }
+    }
+}
+
+impl DnsResolver for RecursiveDnsResolver {
+    fn resolve(&mut self,
+               qname: &String,
+               qtype: QueryType) -> Result<DnsPacket> {
+
+        if let Some(qr) = self.context.authority.query(qname, qtype.clone()) {
             //println!("got record cache hit for {}", qname);
             return Ok(qr);
         }
 
-        if let Some(qr) = self.cache.lookup(qname.clone(), qtype.clone()) {
+        if let Ok(Some(qr)) = self.context.cache.lookup(qname, qtype.clone()) {
             //println!("got record cache hit for {}", qname);
             return Ok(qr);
         }
@@ -61,7 +80,7 @@ impl<'a> DnsResolver<'a> {
         for lbl_idx in 0..labels.len()+1 {
             let domain = labels[lbl_idx..labels.len()].join(".");
 
-            if let Some(qr) = self.cache.lookup(domain.clone(), QueryType::NS) {
+            if let Ok(Some(qr)) = self.context.cache.lookup(&domain, QueryType::NS) {
                 //println!("got ns cache hit for {}", domain);
                 //qr.print();
 
@@ -83,7 +102,7 @@ impl<'a> DnsResolver<'a> {
                 let ns_copy = ns.clone();
 
                 let server = (&*ns_copy, 53);
-                let response = try!(self.client.send_query(qname, qtype.clone(), server, false));
+                let response = try!(self.context.udp_client.send_query(qname, qtype.clone(), server, false));
                 //response.print();
 
                 // If we've got an actual answer, we're done!
@@ -91,9 +110,9 @@ impl<'a> DnsResolver<'a> {
                    response.header.rescode == ResultCode::NXDOMAIN {
 
                     final_result = Ok(response.clone());
-                    self.cache.update(response.answers);
-                    self.cache.update(response.authorities);
-                    self.cache.update(response.resources);
+                    let _ = self.context.cache.update(&response.answers);
+                    let _ = self.context.cache.update(&response.authorities);
+                    let _ = self.context.cache.update(&response.resources);
                     break;
                 }
 
@@ -102,9 +121,9 @@ impl<'a> DnsResolver<'a> {
                 if let Some(new_ns) = response.get_resolved_ns(qname) {
                     // If there is such a record, we can retry the loop with that NS
                     ns = new_ns.clone();
-                    self.cache.update(response.answers);
-                    self.cache.update(response.authorities);
-                    self.cache.update(response.resources);
+                    let _ = self.context.cache.update(&response.answers);
+                    let _ = self.context.cache.update(&response.authorities);
+                    let _ = self.context.cache.update(&response.resources);
                 }
                 else {
                     // If not, we'll have to resolve the ip of a NS record
