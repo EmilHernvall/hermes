@@ -13,6 +13,9 @@ pub trait DnsResolver {
                qtype: QueryType) -> Result<DnsPacket>;
 }
 
+/// A Forwarding DNS Resolver
+///
+/// This resolver uses an external DNS server to service a query
 pub struct ForwardingDnsResolver {
     context: Arc<ServerContext>
 }
@@ -30,18 +33,37 @@ impl DnsResolver for ForwardingDnsResolver {
                qname: &String,
                qtype: QueryType) -> Result<DnsPacket> {
 
+        if let Some(qr) = self.context.authority.query(qname, qtype.clone()) {
+            return Ok(qr);
+        }
+
+        if let Ok(Some(qr)) = self.context.cache.lookup(qname, qtype.clone()) {
+            return Ok(qr);
+        }
+
         if let Some(ref server) = self.context.forward_server {
             let &(ref host, port) = server;
-            self.context.udp_client.send_query(qname,
-                                               qtype.clone(),
-                                               (host.as_str(), port),
-                                               true)
-        } else {
-            Err(Error::new(ErrorKind::NotFound, "No DNS server found"))
+            let result = self.context.udp_client.send_query(qname,
+                                                            qtype.clone(),
+                                                            (host.as_str(), port),
+                                                            true);
+
+            if let Ok(ref qr) = result {
+                let _ = self.context.cache.update(&qr.answers);
+            } else {
+                return Ok(DnsPacket::new());
+            }
+
+            return result;
         }
+
+        Err(Error::new(ErrorKind::NotFound, "No DNS server found"))
     }
 }
 
+/// A Recursive DNS resolver
+///
+/// This resolver can answer any request using the root servers of the internet
 pub struct RecursiveDnsResolver {
     context: Arc<ServerContext>
 }
@@ -60,12 +82,10 @@ impl DnsResolver for RecursiveDnsResolver {
                qtype: QueryType) -> Result<DnsPacket> {
 
         if let Some(qr) = self.context.authority.query(qname, qtype.clone()) {
-            //println!("got record cache hit for {}", qname);
             return Ok(qr);
         }
 
         if let Ok(Some(qr)) = self.context.cache.lookup(qname, qtype.clone()) {
-            //println!("got record cache hit for {}", qname);
             return Ok(qr);
         }
 
@@ -81,8 +101,6 @@ impl DnsResolver for RecursiveDnsResolver {
             let domain = labels[lbl_idx..labels.len()].join(".");
 
             if let Ok(Some(qr)) = self.context.cache.lookup(&domain, QueryType::NS) {
-                //println!("got ns cache hit for {}", domain);
-                //qr.print();
 
                 if let Some(new_ns) = qr.get_resolved_ns(&domain) {
                     tentative_ns = Some(new_ns.clone());
@@ -102,8 +120,10 @@ impl DnsResolver for RecursiveDnsResolver {
                 let ns_copy = ns.clone();
 
                 let server = (&*ns_copy, 53);
-                let response = try!(self.context.udp_client.send_query(qname, qtype.clone(), server, false));
-                //response.print();
+                let response = try!(self.context.udp_client.send_query(qname,
+                                                                       qtype.clone(),
+                                                                       server,
+                                                                       false));
 
                 // If we've got an actual answer, we're done!
                 if response.answers.len() > 0 ||
@@ -130,7 +150,8 @@ impl DnsResolver for RecursiveDnsResolver {
                     if let Some(new_ns_name) = response.get_unresolved_ns(qname) {
 
                         // Recursively resolve the NS
-                        let recursive_response = try!(self.resolve(&new_ns_name, QueryType::A));
+                        let recursive_response = try!(self.resolve(&new_ns_name,
+                                                                   QueryType::A));
 
                         // Pick a random IP and restart
                         if let Some(new_ns) = recursive_response.get_random_a() {

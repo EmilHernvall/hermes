@@ -165,39 +165,6 @@ impl SynchronizedCache {
         }
     }
 
-    /*pub fn run(&mut self) {
-
-        let (req_tx, req_rx) = channel();
-
-        self.tx = Some(req_tx);
-        //let (res_tx, res_rx) = channel();
-
-        spawn(move || {
-            let mut cache = Cache::new();
-            for (req, res_tx) in req_rx {
-                match req {
-                    CacheRequest::Update(records) => {
-                        cache.update(&records);
-                        let _ = res_tx.send(CacheResponse::UpdateOk);
-                    },
-                    CacheRequest::Query(qname, qtype) => {
-                        let res = cache.lookup(&qname, qtype);
-                        let _ = res_tx.send(CacheResponse::QueryOk(res));
-                    },
-                    CacheRequest::List => {
-                        let mut list = Vec::new();
-
-                        for (_, rs) in &cache.records {
-                            list.push(rs.clone());
-                        }
-
-                        let _ = res_tx.send(CacheResponse::ListOk(list));
-                    }
-                }
-            }
-        });
-    }*/
-
     pub fn list(&self) -> Result<Vec<Arc<RecordSet>>> {
         let cache = match self.cache.read() {
             Ok(x) => x,
