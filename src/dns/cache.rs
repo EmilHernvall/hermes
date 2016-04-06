@@ -75,10 +75,14 @@ impl Cache {
     fn fill_queryresult(&mut self,
                         qname: &String,
                         qtype: &QueryType,
-                        result_vec: &mut Vec<ResourceRecord>) {
+                        result_vec: &mut Vec<ResourceRecord>,
+                        increment_stats: bool) {
 
         if let Some(ref mut rs) = self.records.get_mut(qname).and_then(|x| Arc::get_mut(x)) {
-            rs.hits += 1;
+
+            if increment_stats {
+                rs.hits += 1;
+            }
 
             let now = Local::now();
             //println!("recordset {} has:", qname);
@@ -104,16 +108,16 @@ impl Cache {
         let mut result = None;
 
         let mut qr = DnsPacket::new();
-        self.fill_queryresult(qname, &qtype, &mut qr.answers);
+        self.fill_queryresult(qname, &qtype, &mut qr.answers, true);
         if qtype == QueryType::A {
-            self.fill_queryresult(qname, &QueryType::CNAME, &mut qr.answers);
+            self.fill_queryresult(qname, &QueryType::CNAME, &mut qr.answers, false);
         }
-        self.fill_queryresult(qname, &QueryType::NS, &mut qr.authorities);
+        self.fill_queryresult(qname, &QueryType::NS, &mut qr.authorities, false);
 
         for authority in &qr.authorities {
             //println!("searching for {:?}", authority);
             if let ResourceRecord::NS(_, ref host, _) = *authority {
-                self.fill_queryresult(host, &QueryType::A, &mut qr.resources);
+                self.fill_queryresult(host, &QueryType::A, &mut qr.resources, false);
             }
         }
 
@@ -134,20 +138,22 @@ impl Cache {
     pub fn update(&mut self, records: &Vec<ResourceRecord>) -> bool {
 
         for rec in records {
-            if let Some(ref domain) = rec.get_domain() {
-                if let Some(rs) = self.records.get_mut(domain).and_then(|x| Arc::get_mut(x)) {
-                    if rs.append_record(rec) {
-                        //println!("updating record for {}: {:?}", domain, rec);
-                    }
+            let ref domain = match rec.get_domain() {
+                Some(x) => x,
+                None => continue
+            };
+
+            match self.records.get_mut(domain).and_then(|x| Arc::get_mut(x)) {
+                Some(ref mut rs) => {
+                    let _ = rs.append_record(rec);
                     continue;
-                }
-
-                let mut rs = RecordSet::new(domain.clone());
-                rs.append_record(rec);
-                self.records.insert(domain.clone(), Arc::new(rs));
-
-                //println!("new record for {}: {:?}", domain, rec);
+                },
+                None => {}
             }
+
+            let mut rs = RecordSet::new(domain.clone());
+            rs.append_record(rec);
+            self.records.insert(domain.clone(), Arc::new(rs));
         }
 
         true
@@ -201,5 +207,77 @@ impl SynchronizedCache {
         cache.update(records);
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+
+    use std::net::Ipv4Addr;
+
+    use dns::protocol::{ResourceRecord, QueryType};
+
+    #[test]
+    fn test_cache() {
+        let mut cache = Cache::new();
+
+        let mut records = Vec::new();
+        records.push(ResourceRecord::A("www.google.com".to_string(),"127.0.0.1".parse::<Ipv4Addr>().unwrap(),3600));
+        records.push(ResourceRecord::A("www.yahoo.com".to_string(),"127.0.0.2".parse::<Ipv4Addr>().unwrap(),0));
+        records.push(ResourceRecord::CNAME("www.microsoft.com".to_string(),"www.somecdn.com".to_string(),3600));
+
+        cache.update(&records);
+
+        // Test for successful lookup
+        if let Some(packet) = cache.lookup(&"www.google.com".to_string(), QueryType::A) {
+            assert_eq!(records[0], packet.answers[0]);
+        } else {
+            panic!();
+        }
+
+        // Test for failed lookup, since no CNAME's are known for this domain
+        if cache.lookup(&"www.google.com".to_string(), QueryType::CNAME).is_some() {
+            panic!();
+        }
+
+        // Check for successful CNAME lookup
+        if let Some(packet) = cache.lookup(&"www.microsoft.com".to_string(), QueryType::CNAME) {
+            assert_eq!(records[2], packet.answers[0]);
+        } else {
+            panic!();
+        }
+
+        // A lookups should also include CNAME records
+        if let Some(packet) = cache.lookup(&"www.microsoft.com".to_string(), QueryType::A) {
+            assert_eq!(records[2], packet.answers[0]);
+        } else {
+            panic!();
+        }
+
+        // This lookup should fail, since it has expired due to the 0 second TTL
+        if cache.lookup(&"www.yahoo.com".to_string(), QueryType::A).is_some() {
+            panic!();
+        }
+
+        let mut records2 = Vec::new();
+        records2.push(ResourceRecord::A("www.yahoo.com".to_string(),"127.0.0.2".parse::<Ipv4Addr>().unwrap(),3600));
+
+        cache.update(&records2);
+
+        // And now it should succeed, since the record has been updated
+        if !cache.lookup(&"www.yahoo.com".to_string(), QueryType::A).is_some() {
+            panic!();
+        }
+
+        // Check stat counter behavior
+        assert_eq!(3, cache.records.len());
+        assert_eq!(2, cache.records.get(&"www.google.com".to_string()).unwrap().hits);
+        assert_eq!(1, cache.records.get(&"www.google.com".to_string()).unwrap().updates);
+        assert_eq!(2, cache.records.get(&"www.yahoo.com".to_string()).unwrap().hits);
+        assert_eq!(2, cache.records.get(&"www.yahoo.com".to_string()).unwrap().updates);
+        assert_eq!(1, cache.records.get(&"www.microsoft.com".to_string()).unwrap().updates);
+        assert_eq!(2, cache.records.get(&"www.microsoft.com".to_string()).unwrap().hits);
     }
 }
