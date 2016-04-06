@@ -7,10 +7,13 @@ extern crate rustc_serialize;
 extern crate ascii;
 extern crate handlebars;
 extern crate regex;
+extern crate getopts;
 
-//use std::env;
+use std::env;
 use std::sync::Arc;
 use std::net::{Ipv4Addr, Ipv6Addr};
+
+use getopts::Options;
 
 use dns::server::DnsServer;
 use dns::udp::DnsUdpServer;
@@ -19,20 +22,68 @@ use dns::protocol::ResourceRecord;
 use dns::web::run_webserver;
 use dns::context::ServerContext;
 
+
+fn print_usage(program: &str, opts: Options) {
+    let brief = format!("Usage: {} [options]", program);
+    print!("{}", opts.usage(&brief));
+}
+
 fn main() {
 
+    let args: Vec<String> = env::args().collect();
+    let program = args[0].clone();
+
+    let mut opts = Options::new();
+    opts.optflag("h", "help", "print this help menu");
+    opts.optflag("a", "authority", "disable support for recursive lookups, and serve only local zones");
+    opts.optopt("f", "forward", "forward replies to specified dns server", "SERVER");
+
+    let opt_matches = match opts.parse(&args[1..]) {
+        Ok(m) => { m }
+        Err(f) => { panic!(f.to_string()) }
+    };
+
+    if opt_matches.opt_present("h") {
+        print_usage(&program, opts);
+        return;
+    }
+
     let mut context = Arc::new(ServerContext::new());
-    match Arc::get_mut(&mut context).unwrap().initialize() {
-        Ok(_) => {},
-        Err(e) => {
-            println!("Server failed to initialize: {:?}", e);
-            return;
+
+    if let Some(ctx) = Arc::get_mut(&mut context) {
+
+        let mut index_rootservers = true;
+        if opt_matches.opt_present("f") {
+            match opt_matches.opt_str("f").and_then(|x| x.parse::<Ipv4Addr>().ok()) {
+                Some(ip) => {
+                    ctx.forward_server = Some((ip.to_string(), 53));
+                    index_rootservers = false;
+                    println!("Running as forwarder");
+                },
+                None => {
+                    println!("Forward parameter must be a valid Ipv4 address");
+                    return;
+                }
+            }
+        }
+
+        if opt_matches.opt_present("a") {
+            ctx.allow_recursive = false;
+        }
+
+        match ctx.initialize() {
+            Ok(_) => {},
+            Err(e) => {
+                println!("Server failed to initialize: {:?}", e);
+                return;
+            }
+        }
+
+        if index_rootservers {
+            let _ = ctx.cache.update(&get_rootservers());
         }
     }
 
-    let _ = context.cache.update(&get_rootservers());
-
-    //let _ = env::args().nth(1);
 
     let port = 53;
 

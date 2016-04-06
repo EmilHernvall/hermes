@@ -32,7 +32,7 @@ fn hex_to_num(c: char) -> u8 {
     }
 }
 
-fn url_decode(instr: &str) -> String {
+pub fn url_decode(instr: &str) -> String {
     let src_buffer = instr.as_bytes();
 
     let mut pos = 0;
@@ -56,7 +56,7 @@ fn url_decode(instr: &str) -> String {
     buffer
 }
 
-fn parse_formdata<R: Read>(reader: &mut R) -> Result<Vec<(String, String)>> {
+pub fn parse_formdata<R: Read>(reader: &mut R) -> Result<Vec<(String, String)>> {
 
     let mut data = String::new();
     try!(reader.read_to_string(&mut data));
@@ -733,4 +733,44 @@ fn decode_json<T: Decodable>(request: &mut Request) -> DecodeResult<T>
 
     let mut decoder = json::Decoder::new(json);
     Decodable::decode(&mut decoder)
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+
+    use std::io::Cursor;
+
+    #[test]
+    fn test_url_decode() {
+        assert_eq!("@foo barA", url_decode("%40foo%20bar%41"));
+    }
+
+    #[test]
+    fn test_parse_formdata() {
+        let data = "foo=bar&baz=quux";
+        let result = parse_formdata(&mut Cursor::new(data.to_string())).unwrap();
+
+        assert_eq!(2, result.len());
+        assert_eq!(("foo".to_string(),"bar".to_string()), result[0]);
+        assert_eq!(("baz".to_string(),"quux".to_string()), result[1]);
+
+        let data2 = "foo=bar";
+        let result2 = parse_formdata(&mut Cursor::new(data2.to_string())).unwrap();
+
+        assert_eq!(1, result2.len());
+        assert_eq!(("foo".to_string(),"bar".to_string()), result2[0]);
+
+        let data3 = "foo=bar=baz";
+        let result3 = parse_formdata(&mut Cursor::new(data3.to_string())).unwrap();
+
+        assert_eq!(0, result3.len());
+
+        let data4 = "foo=bar&&";
+        let result4 = parse_formdata(&mut Cursor::new(data4.to_string())).unwrap();
+
+        assert_eq!(1, result4.len());
+        assert_eq!(("foo".to_string(),"bar".to_string()), result4[0]);
+    }
 }
