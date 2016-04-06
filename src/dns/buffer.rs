@@ -267,7 +267,7 @@ impl<'a, T> PacketBuffer for StreamPacketBuffer<'a, T> where T: Read + 'a {
     }
 
     fn get_range(&mut self, start: usize, len: usize) -> Result<&[u8]> {
-        while start+len >= self.buffer.len() {
+        while start+len > self.buffer.len() {
             let mut local_buffer = [0; 1];
             try!(self.stream.read(&mut local_buffer));
             self.buffer.push(local_buffer[0]);

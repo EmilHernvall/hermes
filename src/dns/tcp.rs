@@ -1,4 +1,4 @@
-use std::io::{Result, Read, Write};
+use std::io::{Result, Write};
 use std::net::{TcpListener, TcpStream, Shutdown};
 use std::thread::spawn;
 use std::sync::Arc;
@@ -22,10 +22,10 @@ impl DnsTcpServer {
 
     pub fn handle_request(mut stream: TcpStream,
                           context: Arc<ServerContext>) -> Result<()> {
+
         let request = {
-            let mut len_buffer = [0; 2];
-            try!(stream.read(&mut len_buffer));
             let mut stream_buffer = StreamPacketBuffer::new(&mut stream);
+            let _ = try!(stream_buffer.read_u16());
             try!(DnsPacket::from_buffer(&mut stream_buffer))
         };
 

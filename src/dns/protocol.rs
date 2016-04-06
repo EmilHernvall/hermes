@@ -615,7 +615,6 @@ impl DnsPacket {
         }
         for _ in 0..result.header.resource_entries {
             let rec = try!(ResourceRecord::read(buffer));
-            println!("{:?}", rec);
             result.resources.push(rec);
         }
 
