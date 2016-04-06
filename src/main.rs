@@ -1,4 +1,5 @@
 mod dns;
+mod web;
 
 extern crate rand;
 extern crate chrono;
@@ -19,9 +20,8 @@ use dns::server::DnsServer;
 use dns::udp::DnsUdpServer;
 use dns::tcp::DnsTcpServer;
 use dns::protocol::ResourceRecord;
-use dns::web::run_webserver;
 use dns::context::ServerContext;
-
+use web::server::run_webserver;
 
 fn print_usage(program: &str, opts: Options) {
     let brief = format!("Usage: {} [options]", program);
