@@ -9,7 +9,7 @@ use std::cell::Cell;
 
 use dns::client::DnsClient;
 use dns::server::{DnsServer, build_response};
-use dns::protocol::{DnsPacket, DnsQuestion, QueryType};
+use dns::protocol::{DnsPacket, DnsQuestion, QueryType, ResourceRecord};
 use dns::buffer::{PacketBuffer, BytePacketBuffer, VectorPacketBuffer};
 use dns::context::ServerContext;
 
@@ -208,16 +208,26 @@ impl DnsUdpServer {
         // Spawn the response thread
         spawn(move || {
 
+            let mut size_limit = 512;
+
+            // Check for EDNS
+            if request.resources.len() == 1 {
+                if let &ResourceRecord::OPT(size, _, _) = &request.resources[0] {
+                    size_limit = size as usize;
+                }
+            }
+
             // Create a response buffer, and ask the context for an appropriate
             // resolver
             let mut res_buffer = VectorPacketBuffer::new();
             let mut resolver = context.create_resolver(context.clone());
 
             // Build the response, using the dns::server::build_response function
-            match build_response(&request,
+            match build_response(context,
+                                 &request,
                                  &mut resolver,
                                  &mut res_buffer,
-                                 512) {
+                                 size_limit) {
 
                 Ok(_) => {},
                 Err(err) => {

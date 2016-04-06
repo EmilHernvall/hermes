@@ -122,12 +122,12 @@ fn rr_to_json(id: u32, rr: &ResourceRecord) -> Json {
         },
         ResourceRecord::SOA(_, _, _, _, _, _, _, _, _) => {
         },
-        ResourceRecord::PTR => {
-        },
         ResourceRecord::TXT(ref domain, ref txt, ttl) => {
             d.insert("domain".to_string(), domain.to_json());
             d.insert("ttl".to_string(), ttl.to_json());
             d.insert("txt".to_string(), txt.to_json());
+        }
+        ResourceRecord::OPT(_, _, _) => {
         }
     }
 

@@ -8,31 +8,46 @@ use dns::buffer::{PacketBuffer, VectorPacketBuffer};
 
 #[derive(PartialEq,Eq,Debug,Clone)]
 pub enum QueryType {
-    UNKNOWN = 0,
-    A = 1,
-    NS = 2,
-    CNAME = 5,
-    SOA = 6,
-    PTR = 12,
-    MX = 15,
-    TXT = 16,
-    AAAA = 28,
-    SRV = 33
+    UNKNOWN(u16),
+    A, // 1
+    NS, // 2
+    CNAME, // 5
+    SOA, // 6
+    MX, // 15
+    TXT, // 16
+    AAAA, // 28
+    SRV, // 33
+    OPT // 41
 }
 
 impl QueryType {
+    pub fn to_num(&self) -> u16 {
+        match *self {
+            QueryType::UNKNOWN(x) => x,
+            QueryType::A => 1,
+            QueryType::NS => 2,
+            QueryType::CNAME => 5,
+            QueryType::SOA => 6,
+            QueryType::MX => 15,
+            QueryType::TXT => 16,
+            QueryType::AAAA => 28,
+            QueryType::SRV => 33,
+            QueryType::OPT => 41
+        }
+    }
+
     pub fn from_num(num: u16) -> QueryType {
         match num {
             1 => QueryType::A,
             2 => QueryType::NS,
             5 => QueryType::CNAME,
             6 => QueryType::SOA,
-            12 => QueryType::PTR,
             15 => QueryType::MX,
             16 => QueryType::TXT,
             28 => QueryType::AAAA,
             33 => QueryType::SRV,
-            _ => QueryType::UNKNOWN
+            41 => QueryType::OPT,
+            _ => QueryType::UNKNOWN(num)
         }
     }
 }
@@ -45,11 +60,11 @@ pub enum ResourceRecord {
     NS(String, String, u32), // 2
     CNAME(String, String, u32), // 5
     SOA(String, String, String, u32, u32, u32, u32, u32, u32), // 6
-    PTR, // 12
     MX(String, u16, String, u32), // 15
     TXT(String, String, u32), // 16
     AAAA(String, Ipv6Addr, u32), // 28
-    SRV(String, u16, u16, u16, String, u32) // 33
+    SRV(String, u16, u16, u16, String, u32), // 33
+    OPT(u16, u32, String) // 41
 }
 
 impl ResourceRecord {
@@ -59,7 +74,7 @@ impl ResourceRecord {
 
         let qtype_num = try!(buffer.read_u16());
         let qtype = QueryType::from_num(qtype_num);
-        let _ = try!(buffer.read_u16());
+        let class = try!(buffer.read_u16());
         let ttl = try!(buffer.read_u32());
         let data_len = try!(buffer.read_u16());
 
@@ -156,7 +171,16 @@ impl ResourceRecord {
 
                 return Ok(ResourceRecord::TXT(domain, txt, ttl));
             },
-            _ => {
+            QueryType::OPT => {
+                let mut data = String::new();
+
+                let cur_pos = buffer.pos();
+                data.push_str(&String::from_utf8_lossy(try!(buffer.get_range(cur_pos, data_len as usize))));
+                try!(buffer.step(data_len as usize));
+
+                return Ok(ResourceRecord::OPT(class, ttl, data));
+            },
+            QueryType::UNKNOWN(_) => {
                 try!(buffer.step(data_len as usize));
 
                 return Ok(ResourceRecord::UNKNOWN(domain,
@@ -175,7 +199,7 @@ impl ResourceRecord {
         match *self {
             ResourceRecord::A(ref host, ref addr, ttl) => {
                 try!(buffer.write_qname(host));
-                try!(buffer.write_u16(QueryType::A as u16));
+                try!(buffer.write_u16(QueryType::A.to_num()));
                 try!(buffer.write_u16(1));
                 try!(buffer.write_u32(ttl));
                 try!(buffer.write_u16(4));
@@ -188,7 +212,7 @@ impl ResourceRecord {
             },
             ResourceRecord::AAAA(ref host, ref addr, ttl) => {
                 try!(buffer.write_qname(host));
-                try!(buffer.write_u16(QueryType::AAAA as u16));
+                try!(buffer.write_u16(QueryType::AAAA.to_num()));
                 try!(buffer.write_u16(1));
                 try!(buffer.write_u32(ttl));
                 try!(buffer.write_u16(16));
@@ -199,7 +223,7 @@ impl ResourceRecord {
             },
             ResourceRecord::NS(ref domain, ref host, ttl) => {
                 try!(buffer.write_qname(domain));
-                try!(buffer.write_u16(QueryType::NS as u16));
+                try!(buffer.write_u16(QueryType::NS.to_num()));
                 try!(buffer.write_u16(1));
                 try!(buffer.write_u32(ttl));
 
@@ -213,7 +237,7 @@ impl ResourceRecord {
             },
             ResourceRecord::CNAME(ref domain, ref addr, ttl) => {
                 try!(buffer.write_qname(domain));
-                try!(buffer.write_u16(QueryType::CNAME as u16));
+                try!(buffer.write_u16(QueryType::CNAME.to_num()));
                 try!(buffer.write_u16(1));
                 try!(buffer.write_u32(ttl));
 
@@ -227,7 +251,7 @@ impl ResourceRecord {
             },
             ResourceRecord::SRV(ref domain, priority, weight, port, ref srv, ttl) => {
                 try!(buffer.write_qname(domain));
-                try!(buffer.write_u16(QueryType::SRV as u16));
+                try!(buffer.write_u16(QueryType::SRV.to_num()));
                 try!(buffer.write_u16(1));
                 try!(buffer.write_u32(ttl));
 
@@ -244,7 +268,7 @@ impl ResourceRecord {
             },
             ResourceRecord::MX(ref domain, priority, ref mx, ttl) => {
                 try!(buffer.write_qname(domain));
-                try!(buffer.write_u16(QueryType::MX as u16));
+                try!(buffer.write_u16(QueryType::MX.to_num()));
                 try!(buffer.write_u16(1));
                 try!(buffer.write_u32(ttl));
 
@@ -268,7 +292,7 @@ impl ResourceRecord {
                                 ttl) => {
 
                 try!(buffer.write_qname(domain));
-                try!(buffer.write_u16(QueryType::SOA as u16));
+                try!(buffer.write_u16(QueryType::SOA.to_num()));
                 try!(buffer.write_u16(1));
                 try!(buffer.write_u32(ttl));
 
@@ -288,7 +312,7 @@ impl ResourceRecord {
             },
             ResourceRecord::TXT(ref domain, ref txt, ttl) => {
                 try!(buffer.write_qname(domain));
-                try!(buffer.write_u16(QueryType::TXT as u16));
+                try!(buffer.write_u16(QueryType::TXT.to_num()));
                 try!(buffer.write_u16(1));
                 try!(buffer.write_u32(ttl));
                 try!(buffer.write_u16(txt.len() as u16));
@@ -297,7 +321,9 @@ impl ResourceRecord {
                     try!(buffer.write_u8(*b));
                 }
             },
-            _ => {
+            ResourceRecord::OPT(_,_,_) => {
+            },
+            ResourceRecord::UNKNOWN(_,_,_,_) => {
                 println!("Skipping record: {:?}", self);
             }
         }
@@ -313,10 +339,10 @@ impl ResourceRecord {
             ResourceRecord::CNAME(_, _, _) => QueryType::CNAME,
             ResourceRecord::SRV(_, _, _, _, _, _) => QueryType::SRV,
             ResourceRecord::MX(_, _, _, _) => QueryType::MX,
-            ResourceRecord::UNKNOWN(_, _, _, _) => QueryType::UNKNOWN,
+            ResourceRecord::UNKNOWN(_, qtype, _, _) => QueryType::UNKNOWN(qtype),
             ResourceRecord::SOA(_, _, _, _, _, _, _, _, _) => QueryType::SOA,
-            ResourceRecord::PTR => QueryType::PTR,
-            ResourceRecord::TXT(_,_,_) => QueryType::TXT
+            ResourceRecord::TXT(_,_,_) => QueryType::TXT,
+            ResourceRecord::OPT(_,_,_) => QueryType::OPT
         }
     }
 
@@ -330,8 +356,8 @@ impl ResourceRecord {
             ResourceRecord::MX(ref domain, _, _, _) => Some(domain.clone()),
             ResourceRecord::UNKNOWN(ref domain, _, _, _) => Some(domain.clone()),
             ResourceRecord::SOA(ref domain, _, _, _, _, _, _, _, _) => Some(domain.clone()),
-            ResourceRecord::PTR => None,
-            ResourceRecord::TXT(ref domain, _, _) => Some(domain.clone())
+            ResourceRecord::TXT(ref domain, _, _) => Some(domain.clone()),
+            ResourceRecord::OPT(_, _, _) => None
         }
     }
 
@@ -345,8 +371,8 @@ impl ResourceRecord {
             ResourceRecord::MX(_, _, _, ttl) => ttl,
             ResourceRecord::UNKNOWN(_, _, _, ttl) => ttl,
             ResourceRecord::SOA(_, _, _, _, _, _, _, _, ttl) => ttl,
-            ResourceRecord::PTR => 0,
-            ResourceRecord::TXT(_, _, ttl) => ttl
+            ResourceRecord::TXT(_, _, ttl) => ttl,
+            ResourceRecord::OPT(_, _, _) => 0
         }
     }
 }
@@ -522,7 +548,7 @@ impl DnsQuestion {
 
         try!(buffer.write_qname(&self.name));
 
-        let typenum = self.qtype.clone() as u16;
+        let typenum = self.qtype.to_num();
         try!(buffer.write_u16(typenum));
         try!(buffer.write_u16(1));
 
@@ -574,7 +600,7 @@ impl DnsPacket {
 
         for _ in 0..result.header.questions {
             let mut question = DnsQuestion::new(&"".to_string(),
-                                                QueryType::UNKNOWN);
+                                                QueryType::UNKNOWN(0));
             try!(question.read(buffer));
             result.questions.push(question);
         }

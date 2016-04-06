@@ -12,6 +12,7 @@ pub struct ServerContext {
     pub udp_client: DnsUdpClient,
     pub listen_port: u16,
     pub forward_server: Option<(String, u16)>,
+    pub allow_recursive: bool
 }
 
 impl ServerContext {
@@ -21,7 +22,8 @@ impl ServerContext {
             cache: SynchronizedCache::new(),
             udp_client: DnsUdpClient::new(),
             listen_port: 53,
-            forward_server: None
+            forward_server: None,
+            allow_recursive: true
         }
     }
 

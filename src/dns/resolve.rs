@@ -10,7 +10,8 @@ use dns::context::ServerContext;
 pub trait DnsResolver {
     fn resolve(&mut self,
                qname: &String,
-               qtype: QueryType) -> Result<DnsPacket>;
+               qtype: QueryType,
+               recursive: bool) -> Result<DnsPacket>;
 }
 
 /// A Forwarding DNS Resolver
@@ -31,10 +32,21 @@ impl ForwardingDnsResolver {
 impl DnsResolver for ForwardingDnsResolver {
     fn resolve(&mut self,
                qname: &String,
-               qtype: QueryType) -> Result<DnsPacket> {
+               qtype: QueryType,
+               recursive: bool) -> Result<DnsPacket> {
+
+        if let QueryType::UNKNOWN(_) = qtype {
+            let mut packet = DnsPacket::new();
+            packet.header.rescode = ResultCode::NOTIMP;
+            return Ok(packet);
+        }
 
         if let Some(qr) = self.context.authority.query(qname, qtype.clone()) {
             return Ok(qr);
+        }
+
+        if !recursive || !self.context.allow_recursive {
+            return Ok(DnsPacket::new());
         }
 
         if let Ok(Some(qr)) = self.context.cache.lookup(qname, qtype.clone()) {
@@ -79,10 +91,21 @@ impl RecursiveDnsResolver {
 impl DnsResolver for RecursiveDnsResolver {
     fn resolve(&mut self,
                qname: &String,
-               qtype: QueryType) -> Result<DnsPacket> {
+               qtype: QueryType,
+               recursive: bool) -> Result<DnsPacket> {
+
+        if let QueryType::UNKNOWN(_) = qtype {
+            let mut packet = DnsPacket::new();
+            packet.header.rescode = ResultCode::NOTIMP;
+            return Ok(packet);
+        }
 
         if let Some(qr) = self.context.authority.query(qname, qtype.clone()) {
             return Ok(qr);
+        }
+
+        if !recursive || !self.context.allow_recursive {
+            return Ok(DnsPacket::new());
         }
 
         if let Ok(Some(qr)) = self.context.cache.lookup(qname, qtype.clone()) {
@@ -151,7 +174,8 @@ impl DnsResolver for RecursiveDnsResolver {
 
                         // Recursively resolve the NS
                         let recursive_response = try!(self.resolve(&new_ns_name,
-                                                                   QueryType::A));
+                                                                   QueryType::A,
+                                                                   true));
 
                         // Pick a random IP and restart
                         if let Some(new_ns) = recursive_response.get_random_a() {

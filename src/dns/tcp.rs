@@ -32,7 +32,11 @@ impl DnsTcpServer {
         let mut res_buffer = VectorPacketBuffer::new();
 
         let mut resolver = context.create_resolver(context.clone());
-        try!(build_response(&request, &mut resolver, &mut res_buffer, 0xFFFF));
+        try!(build_response(context,
+                            &request,
+                            &mut resolver,
+                            &mut res_buffer,
+                            0xFFFF));
 
         let len = res_buffer.pos();
 
