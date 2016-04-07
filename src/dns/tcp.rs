@@ -1,3 +1,5 @@
+//! a DNS server using TCP for transport
+
 use std::io::{Result, Write};
 use std::net::{TcpListener, TcpStream, Shutdown};
 use std::thread::spawn;

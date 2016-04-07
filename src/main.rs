@@ -1,5 +1,7 @@
-mod dns;
-mod web;
+//! hermes documentation
+
+pub mod dns;
+pub mod web;
 
 extern crate rand;
 extern crate chrono;

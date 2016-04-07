@@ -1,3 +1,5 @@
+//! implements the DNS protocol in a transport agnostic fashion
+
 use std::fmt;
 use std::net::{Ipv4Addr,Ipv6Addr};
 use std::io::{Result, Read};
@@ -913,10 +915,26 @@ mod tests {
 
         packet.questions.push(DnsQuestion::new(&"google.com".to_string(), QueryType::NS));
         //packet.answers.push(ResourceRecord::A("ns1.google.com".to_string(), "127.0.0.1".parse::<Ipv4Addr>().unwrap(), 3600));
-        packet.answers.push(ResourceRecord::NS("google.com".to_string(), "ns1.google.com".to_string(), 3600));
-        packet.answers.push(ResourceRecord::NS("google.com".to_string(), "ns2.google.com".to_string(), 3600));
-        packet.answers.push(ResourceRecord::NS("google.com".to_string(), "ns3.google.com".to_string(), 3600));
-        packet.answers.push(ResourceRecord::NS("google.com".to_string(), "ns4.google.com".to_string(), 3600));
+        packet.answers.push(ResourceRecord::NS {
+            domain: "google.com".to_string(),
+            host: "ns1.google.com".to_string(),
+            ttl: 3600
+        });
+        packet.answers.push(ResourceRecord::NS {
+            domain: "google.com".to_string(),
+            host: "ns2.google.com".to_string(),
+            ttl: 3600
+        });
+        packet.answers.push(ResourceRecord::NS {
+            domain: "google.com".to_string(),
+            host: "ns3.google.com".to_string(),
+            ttl: 3600
+        });
+        packet.answers.push(ResourceRecord::NS {
+            domain: "google.com".to_string(),
+            host: "ns4.google.com".to_string(),
+            ttl: 3600
+        });
 
         let mut buffer = VectorPacketBuffer::new();
         packet.write(&mut buffer, 0xFFFF).unwrap();

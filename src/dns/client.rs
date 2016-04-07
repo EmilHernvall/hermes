@@ -1,3 +1,5 @@
+//! holds the Client trait describing an interface for sending DNS queries
+
 use std::io::Result;
 
 use dns::protocol::{QueryType, DnsPacket};

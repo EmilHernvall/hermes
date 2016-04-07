@@ -1,3 +1,5 @@
+//! contains the data store for local zones
+
 use std::collections::{BTreeMap,BTreeSet};
 use std::sync::{RwLock, LockResult, RwLockReadGuard, RwLockWriteGuard};
 use std::io::{Write,Result,Error,ErrorKind};

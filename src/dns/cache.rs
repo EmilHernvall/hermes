@@ -1,3 +1,5 @@
+//! a threadsafe cache for DNS information
+
 use std::collections::{HashSet,BTreeMap};
 use std::hash::{Hash,Hasher};
 use std::sync::{Arc, RwLock};
@@ -224,9 +226,21 @@ mod tests {
         let mut cache = Cache::new();
 
         let mut records = Vec::new();
-        records.push(ResourceRecord::A("www.google.com".to_string(),"127.0.0.1".parse::<Ipv4Addr>().unwrap(),3600));
-        records.push(ResourceRecord::A("www.yahoo.com".to_string(),"127.0.0.2".parse::<Ipv4Addr>().unwrap(),0));
-        records.push(ResourceRecord::CNAME("www.microsoft.com".to_string(),"www.somecdn.com".to_string(),3600));
+        records.push(ResourceRecord::A {
+            domain: "www.google.com".to_string(),
+            addr: "127.0.0.1".parse::<Ipv4Addr>().unwrap(),
+            ttl: 3600
+        });
+        records.push(ResourceRecord::A {
+            domain: "www.yahoo.com".to_string(),
+            addr: "127.0.0.2".parse::<Ipv4Addr>().unwrap(),
+            ttl: 0
+        });
+        records.push(ResourceRecord::CNAME {
+            domain: "www.microsoft.com".to_string(),
+            host: "www.somecdn.com".to_string(),
+            ttl: 3600
+        });
 
         cache.update(&records);
 
@@ -262,7 +276,11 @@ mod tests {
         }
 
         let mut records2 = Vec::new();
-        records2.push(ResourceRecord::A("www.yahoo.com".to_string(),"127.0.0.2".parse::<Ipv4Addr>().unwrap(),3600));
+        records2.push(ResourceRecord::A {
+            domain: "www.yahoo.com".to_string(),
+            addr: "127.0.0.2".parse::<Ipv4Addr>().unwrap(),
+            ttl: 3600
+        });
 
         cache.update(&records2);
 

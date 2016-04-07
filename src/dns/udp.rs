@@ -1,3 +1,5 @@
+//! a dns client and server using UDP as a transport
+
 use std::net::UdpSocket;
 use std::io::Result;
 use std::sync::{Arc, Mutex};
@@ -23,19 +25,19 @@ use dns::context::ServerContext;
 pub struct DnsUdpClient {
 
     /// Counter for assigning packet ids
-    pub seq: Mutex<Cell<u16>>,
+    seq: Mutex<Cell<u16>>,
 
     /// The listener socket
-    pub socket: UdpSocket,
+    socket: UdpSocket,
 
     /// Queries in progress
-    pub pending_queries: Arc<Mutex<Vec<PendingQuery>>>
+    pending_queries: Arc<Mutex<Vec<PendingQuery>>>
 }
 
 /// A query in progress. This struct holds the `id` if the request, and a channel
 /// endpoint for returning a response back to the thread from which the query
 /// was posed.
-pub struct PendingQuery {
+struct PendingQuery {
     seq: u16,
     tx: Sender<DnsPacket>
 }

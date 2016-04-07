@@ -1,3 +1,5 @@
+//! buffers for use when writing and reading dns packets
+
 use std::io::{Result, Read};
 use std::io::{Error, ErrorKind};
 use std::collections::BTreeMap;

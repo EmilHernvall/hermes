@@ -1,3 +1,6 @@
+//! resolver implementations implementing different strategies for answering
+//! incoming queries
+
 use std::io::Result;
 use std::vec::Vec;
 use std::io::{Error, ErrorKind};

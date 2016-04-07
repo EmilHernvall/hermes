@@ -1,3 +1,5 @@
+//! the server trait describing DNS servers, and transport-independent utility functions
+
 use std::io::Result;
 use std::sync::Arc;
 

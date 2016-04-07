@@ -1,3 +1,5 @@
+//! The dns module implements the DNS protocol and the related functions
+
 pub mod authority;
 pub mod buffer;
 pub mod cache;

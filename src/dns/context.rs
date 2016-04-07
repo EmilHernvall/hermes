@@ -1,3 +1,5 @@
+//! The ServerContext in this thread holds the common state across the server
+
 use std::io::Result;
 use std::sync::Arc;
 
