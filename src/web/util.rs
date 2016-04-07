@@ -2,7 +2,9 @@ use std::collections::BTreeMap;
 use std::io::{Result,Read};
 use std::fmt::Write;
 
-use rustc_serialize::json::{ToJson,Json};
+use rustc_serialize::json::{self,ToJson,Json,DecodeResult,DecoderError};
+use rustc_serialize::Decodable;
+use tiny_http::Request;
 
 use dns::protocol::ResourceRecord;
 
@@ -119,6 +121,17 @@ pub fn rr_to_json(id: u32, rr: &ResourceRecord) -> Json {
     }
 
     Json::Object(d)
+}
+
+pub fn decode_json<T: Decodable>(request: &mut Request) -> DecodeResult<T>
+{
+    let json = match Json::from_reader(request.as_reader()) {
+        Ok(x) => x,
+        Err(e) => return Err(DecoderError::ParseError(e))
+    };
+
+    let mut decoder = json::Decoder::new(json);
+    Decodable::decode(&mut decoder)
 }
 
 #[cfg(test)]

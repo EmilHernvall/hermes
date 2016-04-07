@@ -1,622 +1,106 @@
-use std::collections::BTreeMap;
 use std::path::Path;
-use std::net::{Ipv4Addr,Ipv6Addr};
-use std::io::{Result, Error, ErrorKind, Read};
-use std::error::Error as RealError;
+use std::io::{Result, Error, ErrorKind};
 use std::sync::Arc;
 
-use regex::Regex;
-use tiny_http::{Server, Response, StatusCode, Header, HeaderField, Method, Request};
-use ascii::AsciiString;
+use regex::{Regex,Captures};
+use tiny_http::{Server, Response, StatusCode, Request};
 use handlebars::Handlebars;
-use rustc_serialize::json::{self, ToJson, Json, DecodeResult, DecoderError};
-use rustc_serialize::Decodable;
-use chrono::*;
 
-use dns::cache::SynchronizedCache;
-use dns::protocol::ResourceRecord;
-use dns::authority::{Authority, Zone};
 use dns::context::ServerContext;
 
-use web::util::{FormDataDecodable, parse_formdata, rr_to_json};
-
-#[derive(RustcEncodable)]
-pub struct CacheRecord
-{
-    domain: String,
-    hits: u32,
-    updates: u32,
-    entries: Vec<Json>
+pub trait Action {
+    fn get_regex(&self) -> Regex;
+    fn initialize(&self, server: &mut WebServer);
+    fn handle(&self,
+              server: &WebServer,
+              mut request: Request,
+              path_match: &Captures,
+              json_input: bool,
+              json_output: bool) -> Result<()>;
 }
 
-impl ToJson for CacheRecord {
-    fn to_json(&self) -> Json {
-        let mut d = BTreeMap::new();
-        d.insert("domain".to_string(), self.domain.to_json());
-        d.insert("hits".to_string(), self.hits.to_json());
-        d.insert("updates".to_string(), self.updates.to_json());
-        d.insert("entries".to_string(), self.entries.to_json());
-        Json::Object(d)
-    }
+pub struct WebServer {
+    pub context: Arc<ServerContext>,
+    pub handlebars: Handlebars,
+    pub actions: Vec<Box<Action>>
 }
 
-#[derive(RustcEncodable)]
-pub struct CacheResponse
-{
-    ok: bool,
-    records: Vec<CacheRecord>
-}
+impl WebServer {
 
-impl ToJson for CacheResponse {
-    fn to_json(&self) -> Json {
-        let mut d = BTreeMap::new();
-        d.insert("ok".to_string(), self.ok.to_json());
-        d.insert("records".to_string(), self.records.to_json());
-        Json::Object(d)
-    }
-}
-
-pub fn run_webserver(context: Arc<ServerContext>)
-{
-    let mut handlebars = Handlebars::new();
-    if !handlebars.register_template_file("layout", Path::new("templates/layout.html")).is_ok() {
-        println!("Failed to register layout template");
-        return;
-    }
-    if !handlebars.register_template_file("cache", Path::new("templates/cache.html")).is_ok() {
-        println!("Failed to register cache template");
-        return;
-    }
-    if !handlebars.register_template_file("authority", Path::new("templates/authority.html")).is_ok() {
-        println!("Failed to register authority template");
-        return;
-    }
-    if !handlebars.register_template_file("zone", Path::new("templates/zone.html")).is_ok() {
-        println!("Failed to register zone template");
-        return;
-    }
-
-    let webserver = match Server::http(("0.0.0.0", 5380)) {
-        Ok(x) => x,
-        Err(e) => {
-            println!("Failed to start web server: {:?}", e);
-            return;
-        }
-    };
-
-    let cache_re = Regex::new(r"^/cache").unwrap();
-    let authority_re = Regex::new(r"^/authority$").unwrap();
-    let zone_re = Regex::new(r"^/authority/([A-Za-z0-9-.]+)$").unwrap();
-
-    for request in webserver.incoming_requests() {
-        println!("HTTP {:?} {:?}", request.method(), request.url());
-
-        let accept_header = request.headers().iter()
-            .filter(|x| x.field.as_str() == "Accept").map(|x| x.clone()).next();
-
-        let json_output = match accept_header {
-            Some(ah) => {
-                let value : String = ah.value.into();
-                value.contains("application/json")
-            },
-            None => false
+    pub fn new(context: Arc<ServerContext>) -> WebServer {
+        let mut server = WebServer {
+            context: context,
+            handlebars: Handlebars::new(),
+            actions: Vec::new()
         };
 
-        let content_type_header = request.headers().iter()
-            .filter(|x| x.field.as_str() == "Content-Type").map(|x| x.clone()).next();
+        if !server.handlebars.register_template_file("layout", Path::new("templates/layout.html")).is_ok() {
+            println!("Failed to register layout template");
+        }
 
-        let json_input = match content_type_header {
-            Some(ah) => {
-                let value : String = ah.value.into();
-                value.contains("application/json")
-            },
-            None => false
+        server
+    }
+
+    pub fn register_action(&mut self, action: Box<Action>) {
+        action.initialize(self);
+        self.actions.push(action);
+    }
+
+    pub fn run_webserver(self)
+    {
+        let webserver = match Server::http(("0.0.0.0", 5380)) {
+            Ok(x) => x,
+            Err(e) => {
+                println!("Failed to start web server: {:?}", e);
+                return;
+            }
         };
 
-        if cache_re.is_match(request.url()) {
-            match handle_cache(request,
-                               &mut handlebars,
-                               json_output,
-                               &context.cache) {
-                Ok(_) => {},
-                Err(e) => println!("HTTP request failed: {:?}", e)
-            }
+        for request in webserver.incoming_requests() {
+            println!("HTTP {:?} {:?}", request.method(), request.url());
 
-            continue;
-        }
-        else if authority_re.is_match(request.url()) {
-            match handle_authority(request,
-                                   &mut handlebars,
-                                   json_input,
-                                   json_output,
-                                   &context.authority) {
-                Ok(_) => {},
-                Err(e) => println!("HTTP request failed: {:?}", e)
-            }
+            let accept_header = request.headers().iter()
+                .filter(|x| x.field.as_str() == "Accept").map(|x| x.clone()).next();
 
-            continue;
-        }
-        else if let Some(caps) = zone_re.captures(&request.url().to_string()) {
-            let zone = match caps.at(1) {
-                Some(x) => x,
-                None => {
-                    let response = Response::empty(StatusCode(400));
-                    let _ = request.respond(response);
-                    continue;
-                }
+            let json_output = match accept_header {
+                Some(ah) => {
+                    let value : String = ah.value.into();
+                    value.contains("application/json")
+                },
+                None => false
             };
 
-            match handle_zone(request,
-                              &mut handlebars,
-                              &zone.to_string(),
-                              json_input,
-                              json_output,
-                              &context.authority) {
-                Ok(_) => {},
-                Err(e) => println!("HTTP request failed: {:?}", e)
+            let content_type_header = request.headers().iter()
+                .filter(|x| x.field.as_str() == "Content-Type").map(|x| x.clone()).next();
+
+            let json_input = match content_type_header {
+                Some(ah) => {
+                    let value : String = ah.value.into();
+                    value.contains("application/json")
+                },
+                None => false
+            };
+
+            let matching_actions : Vec<&Box<Action>> =
+                self.actions.iter().filter(|x| x.get_regex().is_match(&request.url())).collect();
+
+            if matching_actions.len() > 0 {
+                let action = &matching_actions[0];
+                if let Some(caps) = action.get_regex().captures(&request.url().to_string()) {
+                    let _ = action.handle(&self, request, &caps, json_input, json_output);
+                }
+            } else {
+                let response = Response::empty(StatusCode(404));
+                let _ = request.respond(response);
             }
-
-            continue;
         }
+    }
 
-        let response = Response::empty(StatusCode(404));
+    pub fn error_response(&self, request: Request, error: &str) -> Result<()>
+    {
+        let response = Response::empty(StatusCode(400));
         let _ = request.respond(response);
+        Err(Error::new(ErrorKind::InvalidInput, error))
     }
 }
 
-pub fn handle_cache(request: Request,
-                    handlebars: &mut Handlebars,
-                    json_output: bool,
-                    cache: &SynchronizedCache) -> Result<()>
-{
-    let start_of_eq = Local::now();
-
-    let cached_records = match cache.list() {
-        Ok(x) => x,
-        Err(_) => Vec::new()
-    };
-
-    let end_of_list = Local::now();
-
-    let mut cache_response = CacheResponse {
-        ok: true,
-        records: Vec::new()
-    };
-
-    for rs in cached_records {
-        let mut cache_record = CacheRecord {
-            domain: rs.domain.clone(),
-            hits: rs.hits,
-            updates: rs.updates,
-            entries: Vec::new()
-        };
-
-        for (id, entry) in rs.records.iter().enumerate() {
-            cache_record.entries.push(rr_to_json(id as u32, &entry.record));
-        }
-
-        cache_response.records.push(cache_record);
-    }
-
-    let end_of_object = Local::now();
-
-    match json_output {
-        true => {
-            let output = match json::encode(&cache_response).ok() {
-                Some(x) => x,
-                None => return error_response(request, "Failed to encode response")
-            };
-
-            let end_of_output = Local::now();
-            println!("list: {:?}", (end_of_list-start_of_eq).num_milliseconds());
-            println!("object: {:?}", (end_of_object-end_of_list).num_milliseconds());
-            println!("output: {:?}", (end_of_output-end_of_object).num_milliseconds());
-
-            let mut response = Response::from_string(output);
-            response.add_header(Header{
-                field: "Content-Type".parse::<HeaderField>().unwrap(),
-                value: "application/json".parse::<AsciiString>().unwrap()
-            });
-            return request.respond(response);
-        },
-        false => {
-            let html_data = match handlebars.render("cache", &cache_response).ok() {
-                Some(x) => x,
-                None => return error_response(request, "Failed to encode response")
-            };
-
-            let end_of_output = Local::now();
-            println!("list: {:?}", (end_of_list-start_of_eq).num_milliseconds());
-            println!("object: {:?}", (end_of_object-end_of_list).num_milliseconds());
-            println!("output: {:?}", (end_of_output-end_of_object).num_milliseconds());
-
-            let mut response = Response::from_string(html_data);
-            response.add_header(Header{
-                field: "Content-Type".parse::<HeaderField>().unwrap(),
-                value: "text/html".parse::<AsciiString>().unwrap()
-            });
-            return request.respond(response);
-        }
-    };
-}
-
-#[derive(Debug,RustcDecodable)]
-pub struct ZoneCreateRequest
-{
-    pub domain: String,
-    pub mname: String,
-    pub rname: String,
-    pub serial: Option<u32>,
-    pub refresh: Option<u32>,
-    pub retry: Option<u32>,
-    pub expire: Option<u32>,
-    pub minimum: Option<u32>
-}
-
-impl FormDataDecodable<ZoneCreateRequest> for ZoneCreateRequest {
-    fn from_formdata(fields: Vec<(String, String)>) -> Result<ZoneCreateRequest> {
-        let mut d = BTreeMap::new();
-        for (k,v) in fields {
-            d.insert(k, v);
-        }
-
-        let domain = match d.get("domain") {
-            Some(x) => x,
-            None => return Err(Error::new(ErrorKind::InvalidInput, "missing domain"))
-        };
-
-        let mname = match d.get("mname") {
-            Some(x) => x,
-            None => return Err(Error::new(ErrorKind::InvalidInput, "missing mname"))
-        };
-
-        let rname = match d.get("rname") {
-            Some(x) => x,
-            None => return Err(Error::new(ErrorKind::InvalidInput, "missing rname"))
-        };
-
-        Ok(ZoneCreateRequest {
-            domain: domain.clone(),
-            mname: mname.clone(),
-            rname: rname.clone(),
-            serial: d.get("serial").and_then(|x| x.parse::<u32>().ok()),
-            refresh: d.get("refresh").and_then(|x| x.parse::<u32>().ok()),
-            retry: d.get("retry").and_then(|x| x.parse::<u32>().ok()),
-            expire: d.get("expire").and_then(|x| x.parse::<u32>().ok()),
-            minimum: d.get("minimum").and_then(|x| x.parse::<u32>().ok())
-        })
-    }
-}
-
-fn handle_authority(mut request: Request,
-                    handlebars: &mut Handlebars,
-                    json_input: bool,
-                    json_output: bool,
-                    authority: &Authority) -> Result<()>
-{
-    match *request.method() {
-        Method::Get => {
-            let zones = match authority.read().ok() {
-                Some(x) => x,
-                None => return error_response(request, "Failed to access authority")
-            };
-
-            let mut zones_json = Vec::new();
-            for zone in &zones.zones() {
-                let mut d = BTreeMap::new();
-                d.insert("domain".to_string(), zone.domain.to_json());
-                d.insert("mname".to_string(), zone.mname.to_json());
-                d.insert("rname".to_string(), zone.rname.to_json());
-                d.insert("serial".to_string(), zone.serial.to_json());
-                d.insert("refresh".to_string(), zone.refresh.to_json());
-                d.insert("retry".to_string(), zone.retry.to_json());
-                d.insert("expire".to_string(), zone.expire.to_json());
-                d.insert("minimum".to_string(), zone.minimum.to_json());
-                zones_json.push(Json::Object(d));
-            }
-
-            let zones_arr = Json::Array(zones_json);
-
-            let mut result_dict = BTreeMap::new();
-            result_dict.insert("ok".to_string(), true.to_json());
-            result_dict.insert("zones".to_string(), zones_arr);
-            let result_obj = Json::Object(result_dict);
-
-            match json_output {
-                true => {
-                    let output = match json::encode(&result_obj).ok() {
-                        Some(x) => x,
-                        None => return error_response(request, "Failed to parse request")
-                    };
-
-                    let mut response = Response::from_string(output);
-                    response.add_header(Header{
-                        field: "Content-Type".parse::<HeaderField>().unwrap(),
-                        value: "application/json".parse::<AsciiString>().unwrap()
-                    });
-                    return request.respond(response);
-                },
-                false => {
-                    let html_data = match handlebars.render("authority", &result_obj) {
-                        Ok(x) => x,
-                        Err(e) => return error_response(request, &("Failed to encode response: ".to_string() + e.description()))
-                    };
-
-                    let mut response = Response::from_string(html_data);
-                    response.add_header(Header{
-                        field: "Content-Type".parse::<HeaderField>().unwrap(),
-                        value: "text/html".parse::<AsciiString>().unwrap()
-                    });
-                    return request.respond(response);
-                }
-            };
-        },
-        Method::Post => {
-            let request_data = if json_input {
-                match decode_json::<ZoneCreateRequest>(&mut request).ok() {
-                    Some(x) => x,
-                    None => return error_response(request, "Failed to parse request")
-                }
-            } else {
-                match parse_formdata(&mut request.as_reader()).and_then(|x| ZoneCreateRequest::from_formdata(x)) {
-                    Ok(x) => x,
-                    Err(e) => return error_response(request, e.description())
-                }
-            };
-
-            println!("Adding zone {}", &request_data.domain);
-            println!("{:?}", request_data);
-
-            let mut zones = match authority.write().ok() {
-                Some(x) => x,
-                None => return error_response(request, "Failed to access authority")
-            };
-
-            let mut zone = Zone::new(request_data.domain,
-                                     request_data.mname,
-                                     request_data.rname);
-            zone.serial = 0;
-            zone.refresh = request_data.refresh.unwrap_or(3600);
-            zone.retry = request_data.retry.unwrap_or(3600);
-            zone.expire = request_data.expire.unwrap_or(3600);
-            zone.minimum = request_data.minimum.unwrap_or(3600);
-            zones.add_zone(zone);
-
-            match zones.save() {
-                Ok(_) => println!("Zones saved!"),
-                Err(e) =>  println!("Zone Saving failed: {:?}", e)
-            }
-
-            let mut response = Response::empty(StatusCode(201));
-            response.add_header(Header{
-                field: "Refresh".parse::<HeaderField>().unwrap(),
-                value: "0; url=/authority".parse::<AsciiString>().unwrap()
-            });
-            return request.respond(response);
-        },
-        _ => {
-        }
-    }
-
-    error_response(request, "Invalid method")
-}
-
-#[derive(Debug,RustcDecodable)]
-pub struct RecordRequest
-{
-    pub delete_record: Option<bool>,
-    pub recordtype: String,
-    pub domain: String,
-    pub ttl: u32,
-    pub host: Option<String>
-}
-
-impl FormDataDecodable<RecordRequest> for RecordRequest {
-    fn from_formdata(fields: Vec<(String, String)>) -> Result<RecordRequest> {
-        let mut d = BTreeMap::new();
-        for (k,v) in fields {
-            d.insert(k, v);
-        }
-
-        let recordtype = match d.get("recordtype") {
-            Some(x) => x,
-            None => return Err(Error::new(ErrorKind::InvalidInput, "missing recordtype"))
-        };
-
-        let domain = match d.get("domain") {
-            Some(x) => x,
-            None => return Err(Error::new(ErrorKind::InvalidInput, "missing domain"))
-        };
-
-        let ttl = match d.get("ttl").and_then(|x| x.parse::<u32>().ok()) {
-            Some(x) => x,
-            None => return Err(Error::new(ErrorKind::InvalidInput, "missing ttl"))
-        };
-
-        let delete_record = d.get("delete_record").and_then(|x| x.parse::<bool>().ok());
-
-        Ok(RecordRequest {
-            delete_record: delete_record,
-            recordtype: recordtype.clone(),
-            domain: domain.clone(),
-            ttl: ttl,
-            host: d.get("host").map(|x| x.clone())
-        })
-    }
-}
-
-impl RecordRequest {
-    fn to_resourcerecord(self) -> Option<ResourceRecord> {
-        match self.recordtype.as_str() {
-            "A" => {
-                let host = match self.host.and_then(|x| x.parse::<Ipv4Addr>().ok()) {
-                    Some(x) => x,
-                    None => return None
-                };
-
-                Some(ResourceRecord::A(self.domain, host, self.ttl))
-            },
-            "AAAA" => {
-                let host = match self.host.and_then(|x| x.parse::<Ipv6Addr>().ok()) {
-                    Some(x) => x,
-                    None => return None
-                };
-
-                Some(ResourceRecord::AAAA(self.domain, host, self.ttl))
-            },
-            "CNAME" => {
-                let host = match self.host {
-                    Some(x) => x,
-                    None => return None
-                };
-
-                Some(ResourceRecord::CNAME(self.domain, host, self.ttl))
-            },
-            _ => None
-        }
-    }
-}
-
-fn handle_zone(mut request: Request,
-               handlebars: &mut Handlebars,
-               zone: &String,
-               json_input: bool,
-               json_output: bool,
-               authority: &Authority) -> Result<()>
-{
-
-    match *request.method() {
-        Method::Get => {
-            let zones = match authority.read().ok() {
-                Some(x) => x,
-                None => return error_response(request, "Failed to access authority")
-            };
-
-            let zone = match zones.get_zone(zone) {
-                Some(x) => x,
-                None => return error_response(request, "Zone not found")
-            };
-
-            let mut records = Vec::new();
-            for (id, rr) in zone.records.iter().enumerate() {
-                records.push(rr_to_json(id as u32, rr));
-            }
-
-            let records_arr = Json::Array(records);
-
-            let mut result_dict = BTreeMap::new();
-            result_dict.insert("ok".to_string(), true.to_json());
-            result_dict.insert("zone".to_string(), zone.domain.to_json());
-            result_dict.insert("records".to_string(), records_arr);
-            let result_obj = Json::Object(result_dict);
-
-            match json_output {
-                true => {
-                    let output = match json::encode(&result_obj).ok() {
-                        Some(x) => x,
-                        None => return error_response(request, "Failed to parse request")
-                    };
-
-                    let mut response = Response::from_string(output);
-                    response.add_header(Header{
-                        field: "Content-Type".parse::<HeaderField>().unwrap(),
-                        value: "application/json".parse::<AsciiString>().unwrap()
-                    });
-                    return request.respond(response);
-                },
-                false => {
-                    let html_data = match handlebars.render("zone", &result_obj).ok() {
-                        Some(x) => x,
-                        None => return error_response(request, "Failed to encode response")
-                    };
-
-                    let mut response = Response::from_string(html_data);
-                    response.add_header(Header{
-                        field: "Content-Type".parse::<HeaderField>().unwrap(),
-                        value: "text/html".parse::<AsciiString>().unwrap()
-                    });
-                    return request.respond(response);
-                }
-            };
-        },
-        Method::Post | Method::Delete => {
-            let request_data = if json_input {
-                match decode_json::<RecordRequest>(&mut request) {
-                    Ok(x) => x,
-                    Err(e) => return error_response(request, e.description())
-                }
-            } else {
-                match parse_formdata(&mut request.as_reader()).and_then(|x| RecordRequest::from_formdata(x)) {
-                    Ok(x) => x,
-                    Err(e) => return error_response(request, e.description())
-                }
-            };
-
-            let delete_record = if request.method() == &Method::Delete {
-                true
-            } else {
-                request_data.delete_record.unwrap_or(false)
-            };
-
-            println!("{:?}", request_data);
-
-            let rr = match request_data.to_resourcerecord() {
-                Some(x) => x,
-                None => return error_response(request, "Invalid record specification")
-            };
-
-            println!("{:?}", rr);
-
-            let mut zones = match authority.write().ok() {
-                Some(x) => x,
-                None => return error_response(request, "Failed to access authority")
-            };
-
-            {
-                let zone = match zones.get_zone_mut(zone) {
-                    Some(x) => x,
-                    None => return error_response(request, "Zone not found")
-                };
-
-                if delete_record {
-                    zone.delete_record(&rr);
-                } else {
-                    zone.add_record(&rr);
-                }
-            };
-
-            match zones.save() {
-                Ok(_) => println!("Zones saved!"),
-                Err(e) =>  println!("Zone Saving failed: {:?}", e)
-            }
-
-            let mut response = Response::empty(StatusCode(201));
-            response.add_header(Header{
-                field: "Refresh".parse::<HeaderField>().unwrap(),
-                value: ("0; url=/authority/".to_string() + zone).parse::<AsciiString>().unwrap()
-            });
-            return request.respond(response);
-        },
-        _ => {}
-    }
-
-    error_response(request, "Invalid method")
-}
-
-fn error_response(request: Request, error: &str) -> Result<()>
-{
-    let response = Response::empty(StatusCode(400));
-    let _ = request.respond(response);
-    Err(Error::new(ErrorKind::InvalidInput, error))
-}
-
-fn decode_json<T: Decodable>(request: &mut Request) -> DecodeResult<T>
-{
-    let json = match Json::from_reader(request.as_reader()) {
-        Ok(x) => x,
-        Err(e) => return Err(DecoderError::ParseError(e))
-    };
-
-    let mut decoder = json::Decoder::new(json);
-    Decodable::decode(&mut decoder)
-}

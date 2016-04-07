@@ -21,7 +21,9 @@ use dns::udp::DnsUdpServer;
 use dns::tcp::DnsTcpServer;
 use dns::protocol::ResourceRecord;
 use dns::context::ServerContext;
-use web::server::run_webserver;
+use web::server::WebServer;
+use web::cache::CacheAction;
+use web::authority::{AuthorityAction,ZoneAction};
 
 fn print_usage(program: &str, opts: Options) {
     let brief = format!("Usage: {} [options]", program);
@@ -89,13 +91,21 @@ fn main() {
 
     println!("Listening on port {}", port);
 
+    // Start DNS servers
     let udp_server = DnsUdpServer::new(context.clone());
     udp_server.run_server();
 
     let tcp_server = DnsTcpServer::new(context.clone());
     tcp_server.run_server();
 
-    run_webserver(context);
+    // Start web server
+    let mut webserver = WebServer::new(context.clone());
+
+    webserver.register_action(Box::new(CacheAction::new(context.clone())));
+    webserver.register_action(Box::new(AuthorityAction::new(context.clone())));
+    webserver.register_action(Box::new(ZoneAction::new(context.clone())));
+
+    webserver.run_webserver();
 }
 
 fn get_rootservers() -> Vec<ResourceRecord>
