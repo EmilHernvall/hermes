@@ -116,7 +116,7 @@ impl Cache {
 
         for authority in &qr.authorities {
             //println!("searching for {:?}", authority);
-            if let ResourceRecord::NS(_, ref host, _) = *authority {
+            if let ResourceRecord::NS { ref host, .. } = *authority {
                 self.fill_queryresult(host, &QueryType::A, &mut qr.resources, false);
             }
         }

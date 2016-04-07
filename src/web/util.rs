@@ -70,27 +70,27 @@ pub fn rr_to_json(id: u32, rr: &ResourceRecord) -> Json {
     d.insert("type".to_string(), qtype.to_json());
 
     match *rr {
-        ResourceRecord::A(ref domain, ref host, ttl) => {
+        ResourceRecord::A { ref domain, ref addr, ttl } => {
             d.insert("domain".to_string(), domain.to_json());
-            d.insert("host".to_string(), host.to_string().to_json());
+            d.insert("host".to_string(), addr.to_string().to_json());
             d.insert("ttl".to_string(), ttl.to_json());
         },
-        ResourceRecord::AAAA(ref domain, ref host, ttl) => {
+        ResourceRecord::AAAA { ref domain, ref addr, ttl } => {
             d.insert("domain".to_string(), domain.to_json());
-            d.insert("host".to_string(), host.to_string().to_json());
+            d.insert("host".to_string(), addr.to_string().to_json());
             d.insert("ttl".to_string(), ttl.to_json());
         },
-        ResourceRecord::NS(ref domain, ref host, ttl) => {
-            d.insert("domain".to_string(), domain.to_json());
-            d.insert("host".to_string(), host.to_json());
-            d.insert("ttl".to_string(), ttl.to_json());
-        },
-        ResourceRecord::CNAME(ref domain, ref host, ttl) => {
+        ResourceRecord::NS { ref domain, ref host, ttl } => {
             d.insert("domain".to_string(), domain.to_json());
             d.insert("host".to_string(), host.to_json());
             d.insert("ttl".to_string(), ttl.to_json());
         },
-        ResourceRecord::SRV(ref domain, priority, weight, port, ref host, ttl) => {
+        ResourceRecord::CNAME { ref domain, ref host, ttl } => {
+            d.insert("domain".to_string(), domain.to_json());
+            d.insert("host".to_string(), host.to_json());
+            d.insert("ttl".to_string(), ttl.to_json());
+        },
+        ResourceRecord::SRV { ref domain, priority, weight, port, ref host, ttl } => {
             d.insert("domain".to_string(), domain.to_json());
             d.insert("host".to_string(), host.to_json());
             d.insert("ttl".to_string(), ttl.to_json());
@@ -98,25 +98,25 @@ pub fn rr_to_json(id: u32, rr: &ResourceRecord) -> Json {
             d.insert("weight".to_string(), weight.to_json());
             d.insert("port".to_string(), port.to_json());
         },
-        ResourceRecord::MX(ref domain, _, ref host, ttl) => {
+        ResourceRecord::MX { ref domain, priority, ref host, ttl } => {
             d.insert("domain".to_string(), domain.to_json());
-            d.insert("host".to_string(), host.to_json());
+            d.insert("host".to_string(), (priority.to_string() + " " + host).to_json());
             d.insert("ttl".to_string(), ttl.to_json());
         },
-        ResourceRecord::UNKNOWN(ref domain, qtype, data_len, ttl) => {
+        ResourceRecord::UNKNOWN { ref domain, qtype, data_len, ttl } => {
             d.insert("domain".to_string(), domain.to_json());
             d.insert("ttl".to_string(), ttl.to_json());
             d.insert("type".to_string(), qtype.to_json());
             d.insert("len".to_string(), data_len.to_json());
         },
-        ResourceRecord::SOA(_, _, _, _, _, _, _, _, _) => {
+        ResourceRecord::SOA { .. } => {
         },
-        ResourceRecord::TXT(ref domain, ref txt, ttl) => {
+        ResourceRecord::TXT { ref domain, ref data, ttl } => {
             d.insert("domain".to_string(), domain.to_json());
             d.insert("ttl".to_string(), ttl.to_json());
-            d.insert("txt".to_string(), txt.to_json());
+            d.insert("txt".to_string(), data.to_json());
         }
-        ResourceRecord::OPT(_, _, _) => {
+        ResourceRecord::OPT { .. } => {
         }
     }
 

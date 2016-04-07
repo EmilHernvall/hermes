@@ -6,6 +6,12 @@ use rand::random;
 
 use dns::buffer::{PacketBuffer, VectorPacketBuffer};
 
+/// QueryType represents the requested Record Type of a query
+///
+/// The specific type UNKNOWN that an integer parameter in order to retain the
+/// id of an unknown query when compiling the reply. An integer can be converted
+/// to a querytype using the `from_num` function, and back to an integer using
+/// the `to_num` method.
 #[derive(PartialEq,Eq,Debug,Clone)]
 pub enum QueryType {
     UNKNOWN(u16),
@@ -52,19 +58,74 @@ impl QueryType {
     }
 }
 
+/// ResourceRecord is the primary representation of a DNS record
+///
+/// This enumeration is used for reading as well as writing records, from network
+/// and from disk (for storage of authority data).
 #[derive(Debug,Clone,PartialEq,Eq,Hash,PartialOrd,Ord)]
 #[allow(dead_code)]
 pub enum ResourceRecord {
-    UNKNOWN(String, u16, u16, u32), // 0
-    A(String, Ipv4Addr, u32), // 1
-    NS(String, String, u32), // 2
-    CNAME(String, String, u32), // 5
-    SOA(String, String, String, u32, u32, u32, u32, u32, u32), // 6
-    MX(String, u16, String, u32), // 15
-    TXT(String, String, u32), // 16
-    AAAA(String, Ipv6Addr, u32), // 28
-    SRV(String, u16, u16, u16, String, u32), // 33
-    OPT(u16, u32, String) // 41
+    UNKNOWN {
+        domain: String,
+        qtype: u16,
+        data_len: u16,
+        ttl: u32
+    }, // 0
+    A {
+        domain: String,
+        addr: Ipv4Addr,
+        ttl: u32
+    }, // 1
+    NS {
+        domain: String,
+        host: String,
+        ttl: u32
+    }, // 2
+    CNAME {
+        domain: String,
+        host: String,
+        ttl: u32
+    }, // 5
+    SOA {
+        domain: String,
+        mname: String,
+        rname: String,
+        serial: u32,
+        refresh: u32,
+        retry: u32,
+        expire: u32,
+        minimum: u32,
+        ttl: u32
+    }, // 6
+    MX {
+        domain: String,
+        priority: u16,
+        host: String,
+        ttl: u32
+    }, // 15
+    TXT {
+        domain: String,
+        data: String,
+        ttl: u32
+    }, // 16
+    AAAA {
+        domain: String,
+        addr: Ipv6Addr,
+        ttl: u32
+    }, // 28
+    SRV {
+        domain: String,
+        priority: u16,
+        weight: u16,
+        port: u16,
+        host: String,
+        ttl: u32
+    }, // 33
+    OPT {
+        packet_len: u16,
+        flags: u32,
+        data: String
+    }// 41
 }
 
 impl ResourceRecord {
@@ -86,7 +147,11 @@ impl ResourceRecord {
                                          ((raw_addr >> 8) & 0xFF) as u8,
                                          ((raw_addr >> 0) & 0xFF) as u8);
 
-                return Ok(ResourceRecord::A(domain, addr, ttl));
+                return Ok(ResourceRecord::A {
+                    domain: domain,
+                    addr: addr,
+                    ttl: ttl
+                });
             },
             QueryType::AAAA => {
                 let raw_addr1 = try!(buffer.read_u32());
@@ -102,19 +167,31 @@ impl ResourceRecord {
                                          ((raw_addr4 >> 16) & 0xFFFF) as u16,
                                          ((raw_addr4 >> 0) & 0xFFFF) as u16);
 
-                return Ok(ResourceRecord::AAAA(domain, addr, ttl));
+                return Ok(ResourceRecord::AAAA {
+                    domain: domain,
+                    addr: addr,
+                    ttl: ttl
+                });
             },
             QueryType::NS => {
                 let mut ns = String::new();
                 try!(buffer.read_qname(&mut ns));
 
-                return Ok(ResourceRecord::NS(domain, ns, ttl));
+                return Ok(ResourceRecord::NS {
+                    domain: domain,
+                    host: ns,
+                    ttl: ttl
+                });
             },
             QueryType::CNAME => {
                 let mut cname = String::new();
                 try!(buffer.read_qname(&mut cname));
 
-                return Ok(ResourceRecord::CNAME(domain, cname, ttl));
+                return Ok(ResourceRecord::CNAME {
+                    domain: domain,
+                    host: cname,
+                    ttl: ttl
+                });
             },
             QueryType::SRV => {
                 let priority = try!(buffer.read_u16());
@@ -124,19 +201,26 @@ impl ResourceRecord {
                 let mut srv = String::new();
                 try!(buffer.read_qname(&mut srv));
 
-                return Ok(ResourceRecord::SRV(domain,
-                                           priority,
-                                           weight,
-                                           port,
-                                           srv,
-                                           ttl));
+                return Ok(ResourceRecord::SRV {
+                    domain: domain,
+                    priority: priority,
+                    weight: weight,
+                    port: port,
+                    host: srv,
+                    ttl: ttl
+                });
             },
             QueryType::MX => {
                 let priority = try!(buffer.read_u16());
                 let mut mx = String::new();
                 try!(buffer.read_qname(&mut mx));
 
-                return Ok(ResourceRecord::MX(domain, priority, mx, ttl));
+                return Ok(ResourceRecord::MX {
+                    domain: domain,
+                    priority: priority,
+                    host: mx,
+                    ttl: ttl
+                });
             },
             QueryType::SOA => {
                 let mut mname = String::new();
@@ -151,15 +235,17 @@ impl ResourceRecord {
                 let expire = try!(buffer.read_u32());
                 let minimum = try!(buffer.read_u32());
 
-                return Ok(ResourceRecord::SOA(domain,
-                                              mname,
-                                              rname,
-                                              serial,
-                                              refresh,
-                                              retry,
-                                              expire,
-                                              minimum,
-                                              ttl));
+                return Ok(ResourceRecord::SOA {
+                    domain: domain,
+                    mname: mname,
+                    rname: rname,
+                    serial: serial,
+                    refresh: refresh,
+                    retry: retry,
+                    expire: expire,
+                    minimum: minimum,
+                    ttl: ttl
+                });
             },
             QueryType::TXT => {
                 let mut txt = String::new();
@@ -169,7 +255,11 @@ impl ResourceRecord {
 
                 try!(buffer.step(data_len as usize));
 
-                return Ok(ResourceRecord::TXT(domain, txt, ttl));
+                return Ok(ResourceRecord::TXT {
+                    domain: domain,
+                    data: txt,
+                    ttl: ttl
+                });
             },
             QueryType::OPT => {
                 let mut data = String::new();
@@ -178,27 +268,30 @@ impl ResourceRecord {
                 data.push_str(&String::from_utf8_lossy(try!(buffer.get_range(cur_pos, data_len as usize))));
                 try!(buffer.step(data_len as usize));
 
-                return Ok(ResourceRecord::OPT(class, ttl, data));
+                return Ok(ResourceRecord::OPT {
+                    packet_len: class,
+                    flags: ttl,
+                    data: data
+                });
             },
             QueryType::UNKNOWN(_) => {
                 try!(buffer.step(data_len as usize));
 
-                return Ok(ResourceRecord::UNKNOWN(domain,
-                                                  qtype_num,
-                                                  data_len,
-                                                  ttl));
+                return Ok(ResourceRecord::UNKNOWN { domain: domain,
+                                                    qtype: qtype_num,
+                                                    data_len: data_len,
+                                                    ttl: ttl });
             }
         }
     }
 
-    pub fn write<T: PacketBuffer>(&self,
-                                  buffer: &mut T) -> Result<usize> {
+    pub fn write<T: PacketBuffer>(&self, buffer: &mut T) -> Result<usize> {
 
         let start_pos = buffer.pos();
 
         match *self {
-            ResourceRecord::A(ref host, ref addr, ttl) => {
-                try!(buffer.write_qname(host));
+            ResourceRecord::A { ref domain, ref addr, ttl } => {
+                try!(buffer.write_qname(domain));
                 try!(buffer.write_u16(QueryType::A.to_num()));
                 try!(buffer.write_u16(1));
                 try!(buffer.write_u32(ttl));
@@ -210,8 +303,8 @@ impl ResourceRecord {
                 try!(buffer.write_u8(octets[2]));
                 try!(buffer.write_u8(octets[3]));
             },
-            ResourceRecord::AAAA(ref host, ref addr, ttl) => {
-                try!(buffer.write_qname(host));
+            ResourceRecord::AAAA { ref domain, ref addr, ttl } => {
+                try!(buffer.write_qname(domain));
                 try!(buffer.write_u16(QueryType::AAAA.to_num()));
                 try!(buffer.write_u16(1));
                 try!(buffer.write_u32(ttl));
@@ -221,7 +314,7 @@ impl ResourceRecord {
                     try!(buffer.write_u16(*octet));
                 }
             },
-            ResourceRecord::NS(ref domain, ref host, ttl) => {
+            ResourceRecord::NS { ref domain, ref host, ttl } => {
                 try!(buffer.write_qname(domain));
                 try!(buffer.write_u16(QueryType::NS.to_num()));
                 try!(buffer.write_u16(1));
@@ -235,7 +328,7 @@ impl ResourceRecord {
                 let size = buffer.pos() - (pos + 2);
                 try!(buffer.set_u16(pos, size as u16));
             },
-            ResourceRecord::CNAME(ref domain, ref addr, ttl) => {
+            ResourceRecord::CNAME { ref domain, ref host, ttl } => {
                 try!(buffer.write_qname(domain));
                 try!(buffer.write_u16(QueryType::CNAME.to_num()));
                 try!(buffer.write_u16(1));
@@ -244,12 +337,12 @@ impl ResourceRecord {
                 let pos = buffer.pos();
                 try!(buffer.write_u16(0));
 
-                try!(buffer.write_qname(addr));
+                try!(buffer.write_qname(host));
 
                 let size = buffer.pos() - (pos + 2);
                 try!(buffer.set_u16(pos, size as u16));
             },
-            ResourceRecord::SRV(ref domain, priority, weight, port, ref srv, ttl) => {
+            ResourceRecord::SRV { ref domain, priority, weight, port, ref host, ttl } => {
                 try!(buffer.write_qname(domain));
                 try!(buffer.write_u16(QueryType::SRV.to_num()));
                 try!(buffer.write_u16(1));
@@ -261,12 +354,12 @@ impl ResourceRecord {
                 try!(buffer.write_u16(priority));
                 try!(buffer.write_u16(weight));
                 try!(buffer.write_u16(port));
-                try!(buffer.write_qname(srv));
+                try!(buffer.write_qname(host));
 
                 let size = buffer.pos() - (pos + 2);
                 try!(buffer.set_u16(pos, size as u16));
             },
-            ResourceRecord::MX(ref domain, priority, ref mx, ttl) => {
+            ResourceRecord::MX { ref domain, priority, ref host, ttl } => {
                 try!(buffer.write_qname(domain));
                 try!(buffer.write_u16(QueryType::MX.to_num()));
                 try!(buffer.write_u16(1));
@@ -276,20 +369,22 @@ impl ResourceRecord {
                 try!(buffer.write_u16(0));
 
                 try!(buffer.write_u16(priority));
-                try!(buffer.write_qname(mx));
+                try!(buffer.write_qname(host));
 
                 let size = buffer.pos() - (pos + 2);
                 try!(buffer.set_u16(pos, size as u16));
             },
-            ResourceRecord::SOA(ref domain,
-                                ref mname,
-                                ref rname,
-                                serial,
-                                refresh,
-                                retry,
-                                expire,
-                                minimum,
-                                ttl) => {
+            ResourceRecord::SOA {
+                ref domain,
+                ref mname,
+                ref rname,
+                serial,
+                refresh,
+                retry,
+                expire,
+                minimum,
+                ttl
+            } => {
 
                 try!(buffer.write_qname(domain));
                 try!(buffer.write_u16(QueryType::SOA.to_num()));
@@ -310,20 +405,20 @@ impl ResourceRecord {
                 let size = buffer.pos() - (pos + 2);
                 try!(buffer.set_u16(pos, size as u16));
             },
-            ResourceRecord::TXT(ref domain, ref txt, ttl) => {
+            ResourceRecord::TXT { ref domain, ref data, ttl } => {
                 try!(buffer.write_qname(domain));
                 try!(buffer.write_u16(QueryType::TXT.to_num()));
                 try!(buffer.write_u16(1));
                 try!(buffer.write_u32(ttl));
-                try!(buffer.write_u16(txt.len() as u16));
+                try!(buffer.write_u16(data.len() as u16));
 
-                for b in txt.as_bytes() {
+                for b in data.as_bytes() {
                     try!(buffer.write_u8(*b));
                 }
             },
-            ResourceRecord::OPT(_,_,_) => {
+            ResourceRecord::OPT { .. } => {
             },
-            ResourceRecord::UNKNOWN(_,_,_,_) => {
+            ResourceRecord::UNKNOWN { .. } => {
                 println!("Skipping record: {:?}", self);
             }
         }
@@ -333,50 +428,51 @@ impl ResourceRecord {
 
     pub fn get_querytype(&self) -> QueryType {
         match *self {
-            ResourceRecord::A(_, _, _) => QueryType::A,
-            ResourceRecord::AAAA(_, _, _) => QueryType::AAAA,
-            ResourceRecord::NS(_, _, _) => QueryType::NS,
-            ResourceRecord::CNAME(_, _, _) => QueryType::CNAME,
-            ResourceRecord::SRV(_, _, _, _, _, _) => QueryType::SRV,
-            ResourceRecord::MX(_, _, _, _) => QueryType::MX,
-            ResourceRecord::UNKNOWN(_, qtype, _, _) => QueryType::UNKNOWN(qtype),
-            ResourceRecord::SOA(_, _, _, _, _, _, _, _, _) => QueryType::SOA,
-            ResourceRecord::TXT(_,_,_) => QueryType::TXT,
-            ResourceRecord::OPT(_,_,_) => QueryType::OPT
+            ResourceRecord::A { .. } => QueryType::A,
+            ResourceRecord::AAAA { .. } => QueryType::AAAA,
+            ResourceRecord::NS { .. } => QueryType::NS,
+            ResourceRecord::CNAME { .. } => QueryType::CNAME,
+            ResourceRecord::SRV { .. } => QueryType::SRV,
+            ResourceRecord::MX { .. } => QueryType::MX,
+            ResourceRecord::UNKNOWN { qtype, .. } => QueryType::UNKNOWN(qtype),
+            ResourceRecord::SOA { .. } => QueryType::SOA,
+            ResourceRecord::TXT { .. } => QueryType::TXT,
+            ResourceRecord::OPT { .. } => QueryType::OPT
         }
     }
 
     pub fn get_domain(&self) -> Option<String> {
         match *self {
-            ResourceRecord::A(ref domain, _, _) => Some(domain.clone()),
-            ResourceRecord::AAAA(ref domain, _, _) => Some(domain.clone()),
-            ResourceRecord::NS(ref domain, _, _) => Some(domain.clone()),
-            ResourceRecord::CNAME(ref domain, _, _) => Some(domain.clone()),
-            ResourceRecord::SRV(ref domain, _, _, _, _, _) => Some(domain.clone()),
-            ResourceRecord::MX(ref domain, _, _, _) => Some(domain.clone()),
-            ResourceRecord::UNKNOWN(ref domain, _, _, _) => Some(domain.clone()),
-            ResourceRecord::SOA(ref domain, _, _, _, _, _, _, _, _) => Some(domain.clone()),
-            ResourceRecord::TXT(ref domain, _, _) => Some(domain.clone()),
-            ResourceRecord::OPT(_, _, _) => None
+            ResourceRecord::A{ ref domain, .. } => Some(domain.clone()),
+            ResourceRecord::AAAA { ref domain, .. } => Some(domain.clone()),
+            ResourceRecord::NS { ref domain, .. } => Some(domain.clone()),
+            ResourceRecord::CNAME { ref domain, .. } => Some(domain.clone()),
+            ResourceRecord::SRV { ref domain, .. } => Some(domain.clone()),
+            ResourceRecord::MX { ref domain, .. } => Some(domain.clone()),
+            ResourceRecord::UNKNOWN { ref domain, .. } => Some(domain.clone()),
+            ResourceRecord::SOA { ref domain, .. } => Some(domain.clone()),
+            ResourceRecord::TXT { ref domain, .. } => Some(domain.clone()),
+            ResourceRecord::OPT { .. } => None
         }
     }
 
     pub fn get_ttl(&self) -> u32 {
         match *self {
-            ResourceRecord::A(_, _, ttl) => ttl,
-            ResourceRecord::AAAA(_, _, ttl) => ttl,
-            ResourceRecord::NS(_, _, ttl) => ttl,
-            ResourceRecord::CNAME(_, _, ttl) => ttl,
-            ResourceRecord::SRV(_, _, _, _, _, ttl) => ttl,
-            ResourceRecord::MX(_, _, _, ttl) => ttl,
-            ResourceRecord::UNKNOWN(_, _, _, ttl) => ttl,
-            ResourceRecord::SOA(_, _, _, _, _, _, _, _, ttl) => ttl,
-            ResourceRecord::TXT(_, _, ttl) => ttl,
-            ResourceRecord::OPT(_, _, _) => 0
+            ResourceRecord::A { ttl, .. } => ttl,
+            ResourceRecord::AAAA { ttl, .. } => ttl,
+            ResourceRecord::NS { ttl, .. } => ttl,
+            ResourceRecord::CNAME { ttl, .. } => ttl,
+            ResourceRecord::SRV { ttl, .. } => ttl,
+            ResourceRecord::MX { ttl, .. } => ttl,
+            ResourceRecord::UNKNOWN { ttl, .. } => ttl,
+            ResourceRecord::SOA { ttl, .. } => ttl,
+            ResourceRecord::TXT { ttl, .. } => ttl,
+            ResourceRecord::OPT { .. } => 0
         }
     }
 }
 
+/// The result code for a DNS query, as described in the specification
 #[derive(Clone,Debug,PartialEq,Eq)]
 pub enum ResultCode {
     NOERROR = 0,
@@ -401,6 +497,7 @@ impl ResultCode {
     }
 }
 
+/// Representation of a DNS header
 #[derive(Clone,Debug)]
 pub struct DnsHeader {
     pub id: u16, // 16 bits
@@ -526,6 +623,7 @@ impl fmt::Display for DnsHeader {
     }
 }
 
+/// Representation of a DNS question
 #[derive(Debug,Clone,PartialEq,Eq)]
 pub struct DnsQuestion {
     pub name: String,
@@ -574,6 +672,11 @@ impl fmt::Display for DnsQuestion {
     }
 }
 
+/// Representation of a complete DNS packet
+///
+/// This is the work horse of the server. A DNS packet can be read and written
+/// in a single operation, and is used both by the network facing components and
+/// internally by the resolver, cache and authority.
 #[derive(Clone, Debug)]
 pub struct DnsPacket {
     pub header: DnsHeader,
@@ -645,8 +748,8 @@ impl DnsPacket {
         if self.answers.len() > 0 {
             let idx = random::<usize>() % self.answers.len();
             let a_record = &self.answers[idx];
-            if let &ResourceRecord::A(_, ref ip, _) = a_record {
-                return Some(ip.to_string());
+            if let &ResourceRecord::A{ ref addr, .. } = a_record {
+                return Some(addr.to_string());
             }
         }
 
@@ -658,10 +761,10 @@ impl DnsPacket {
         let mut unresolved = Vec::new();
         for answer in &self.answers {
             let mut matched = false;
-            if let ResourceRecord::CNAME(_, ref host, _) = *answer {
+            if let ResourceRecord::CNAME { ref host, .. } = *answer {
                 for answer2 in &self.answers {
-                    if let ResourceRecord::A(ref host2, _, _) = *answer2 {
-                        if host2 == host {
+                    if let ResourceRecord::A { ref domain, .. } = *answer2 {
+                        if domain == host {
                             matched = true;
                             break;
                         }
@@ -681,18 +784,23 @@ impl DnsPacket {
 
         let mut new_authorities = Vec::new();
         for auth in &self.authorities {
-            if let ResourceRecord::NS(ref suffix, ref host, _) = *auth {
-                if !qname.to_lowercase().ends_with(&suffix.to_lowercase()) {
+            if let ResourceRecord::NS { ref domain, ref host, .. } = *auth {
+                if !qname.to_lowercase().ends_with(&domain.to_lowercase()) {
                     continue;
                 }
 
                 for rsrc in &self.resources {
-                    if let ResourceRecord::A(ref host2, ref ip, ref ttl) = *rsrc {
-                        if host2 != host {
+                    if let ResourceRecord::A{ ref domain, ref addr, ref ttl } = *rsrc {
+                        if domain != host {
                             continue;
                         }
 
-                        let rec = ResourceRecord::A(host.clone(), ip.clone(), *ttl);
+                        let rec = ResourceRecord::A {
+                            domain: host.clone(),
+                            addr: addr.clone(),
+                            ttl: *ttl
+                        };
+
                         new_authorities.push(rec);
                     }
                 }
@@ -701,8 +809,8 @@ impl DnsPacket {
 
         if new_authorities.len() > 0 {
             let idx = random::<usize>() % new_authorities.len();
-            if let ResourceRecord::A(_, ip, _) = new_authorities[idx] {
-                return Some(ip.to_string());
+            if let ResourceRecord::A { addr, .. } = new_authorities[idx] {
+                return Some(addr.to_string());
             }
         }
 
@@ -713,8 +821,8 @@ impl DnsPacket {
 
         let mut new_authorities = Vec::new();
         for auth in &self.authorities {
-            if let ResourceRecord::NS(ref suffix, ref host, _) = *auth {
-                if !qname.to_lowercase().ends_with(&suffix.to_lowercase()) {
+            if let ResourceRecord::NS { ref domain, ref host, .. } = *auth {
+                if !qname.to_lowercase().ends_with(&domain.to_lowercase()) {
                     continue;
                 }
 

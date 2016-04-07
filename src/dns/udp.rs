@@ -212,8 +212,8 @@ impl DnsUdpServer {
 
             // Check for EDNS
             if request.resources.len() == 1 {
-                if let &ResourceRecord::OPT(size, _, _) = &request.resources[0] {
-                    size_limit = size as usize;
+                if let &ResourceRecord::OPT { packet_len, .. } = &request.resources[0] {
+                    size_limit = packet_len as usize;
                 }
             }
 

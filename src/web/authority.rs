@@ -118,7 +118,11 @@ impl RecordRequest {
                     None => return None
                 };
 
-                Some(ResourceRecord::A(self.domain, host, self.ttl))
+                Some(ResourceRecord::A {
+                    domain: self.domain,
+                    addr: host,
+                    ttl: self.ttl
+                })
             },
             "AAAA" => {
                 let host = match self.host.and_then(|x| x.parse::<Ipv6Addr>().ok()) {
@@ -126,7 +130,11 @@ impl RecordRequest {
                     None => return None
                 };
 
-                Some(ResourceRecord::AAAA(self.domain, host, self.ttl))
+                Some(ResourceRecord::AAAA {
+                    domain: self.domain,
+                    addr: host,
+                    ttl: self.ttl
+                })
             },
             "CNAME" => {
                 let host = match self.host {
@@ -134,7 +142,11 @@ impl RecordRequest {
                     None => return None
                 };
 
-                Some(ResourceRecord::CNAME(self.domain, host, self.ttl))
+                Some(ResourceRecord::CNAME {
+                    domain: self.domain,
+                    host: host,
+                    ttl: self.ttl
+                })
             },
             _ => None
         }

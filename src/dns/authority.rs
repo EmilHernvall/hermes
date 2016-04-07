@@ -226,15 +226,17 @@ impl Authority {
         if packet.answers.len() == 0 {
             packet.header.rescode = ResultCode::NXDOMAIN;
 
-            packet.authorities.push(ResourceRecord::SOA(zone.domain.clone(),
-                                                        zone.mname.clone(),
-                                                        zone.rname.clone(),
-                                                        zone.serial,
-                                                        zone.refresh,
-                                                        zone.retry,
-                                                        zone.expire,
-                                                        zone.minimum,
-                                                        zone.minimum));
+            packet.authorities.push(ResourceRecord::SOA {
+                domain: zone.domain.clone(),
+                mname: zone.mname.clone(),
+                rname: zone.rname.clone(),
+                serial: zone.serial,
+                refresh: zone.refresh,
+                retry: zone.retry,
+                expire: zone.expire,
+                minimum: zone.minimum,
+                ttl: zone.minimum
+            });
         }
 
         Some(packet)

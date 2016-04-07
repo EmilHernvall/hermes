@@ -16,7 +16,7 @@ pub fn resolve_cnames(lookup_list: &Vec<ResourceRecord>,
 {
     for ref rec in lookup_list {
         match *rec {
-            &ResourceRecord::CNAME(_, ref host, _) => {
+            &ResourceRecord::CNAME { ref host, .. } => {
                 if let Ok(result2) = resolver.resolve(host,
                                                       QueryType::A,
                                                       true) {
@@ -27,8 +27,8 @@ pub fn resolve_cnames(lookup_list: &Vec<ResourceRecord>,
                     resolve_cnames(&new_unmatched, results, resolver);
                 }
             },
-            &ResourceRecord::SRV(_, _, _, _, ref srv, _) => {
-                if let Ok(result2) = resolver.resolve(srv,
+            &ResourceRecord::SRV { ref host, .. } => {
+                if let Ok(result2) = resolver.resolve(host,
                                                       QueryType::A,
                                                       true) {
 
