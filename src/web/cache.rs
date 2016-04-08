@@ -1,7 +1,6 @@
 use std::io::Result;
 use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::path::Path;
 
 use regex::{Regex,Captures};
 use tiny_http::{Response, Header, HeaderField, Request};
@@ -68,7 +67,8 @@ impl Action for CacheAction {
     }
 
     fn initialize(&self, server: &mut WebServer) {
-        if !server.handlebars.register_template_file("cache", Path::new("templates/cache.html")).is_ok() {
+        let tpl_data = include_str!("templates/cache.html").to_string();
+        if !server.handlebars.register_template_string("cache", tpl_data).is_ok() {
             println!("Failed to register cache template");
             return;
         }

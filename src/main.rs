@@ -18,9 +18,7 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 
 use getopts::Options;
 
-use dns::server::DnsServer;
-use dns::udp::DnsUdpServer;
-use dns::tcp::DnsTcpServer;
+use dns::server::{DnsServer,DnsUdpServer,DnsTcpServer};
 use dns::protocol::ResourceRecord;
 use dns::context::ServerContext;
 use web::server::WebServer;
@@ -94,20 +92,30 @@ fn main() {
     println!("Listening on port {}", port);
 
     // Start DNS servers
-    let udp_server = DnsUdpServer::new(context.clone());
-    udp_server.run_server();
+    if context.enable_udp {
+        let udp_server = DnsUdpServer::new(context.clone());
+        if !udp_server.run_server() {
+            println!("Failed to bind UDP listener");
+        }
+    }
 
-    let tcp_server = DnsTcpServer::new(context.clone());
-    tcp_server.run_server();
+    if context.enable_tcp {
+        let tcp_server = DnsTcpServer::new(context.clone());
+        if !tcp_server.run_server() {
+            println!("Failed to bind TCP listener");
+        }
+    }
 
     // Start web server
-    let mut webserver = WebServer::new(context.clone());
+    if context.enable_api {
+        let mut webserver = WebServer::new(context.clone());
 
-    webserver.register_action(Box::new(CacheAction::new(context.clone())));
-    webserver.register_action(Box::new(AuthorityAction::new(context.clone())));
-    webserver.register_action(Box::new(ZoneAction::new(context.clone())));
+        webserver.register_action(Box::new(CacheAction::new(context.clone())));
+        webserver.register_action(Box::new(AuthorityAction::new(context.clone())));
+        webserver.register_action(Box::new(ZoneAction::new(context.clone())));
 
-    webserver.run_webserver();
+        webserver.run_webserver();
+    }
 }
 
 fn get_rootservers() -> Vec<ResourceRecord>

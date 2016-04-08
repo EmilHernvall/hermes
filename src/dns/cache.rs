@@ -54,7 +54,6 @@ impl RecordSet {
                 timestamp: Local::now()
             };
 
-        println!("cache entry update: {:?} ", rec);
         if self.records.contains(&entry) {
             self.records.remove(&entry);
         }
@@ -87,9 +86,7 @@ impl Cache {
             }
 
             let now = Local::now();
-            //println!("recordset {} has:", qname);
             for entry in &rs.records {
-                //println!("entry: {:?}", rec);
                 let ttl_offset = Duration::seconds(entry.record.get_ttl() as i64);
                 let expires = entry.timestamp + ttl_offset;
                 if expires < now {
@@ -117,7 +114,6 @@ impl Cache {
         self.fill_queryresult(qname, &QueryType::NS, &mut qr.authorities, false);
 
         for authority in &qr.authorities {
-            //println!("searching for {:?}", authority);
             if let ResourceRecord::NS { ref host, .. } = *authority {
                 self.fill_queryresult(host, &QueryType::A, &mut qr.resources, false);
             }

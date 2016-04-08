@@ -1,4 +1,3 @@
-use std::path::Path;
 use std::io::{Result, Error, ErrorKind};
 use std::sync::Arc;
 
@@ -34,7 +33,8 @@ impl WebServer {
             actions: Vec::new()
         };
 
-        if !server.handlebars.register_template_file("layout", Path::new("templates/layout.html")).is_ok() {
+        let tpl_data = include_str!("templates/layout.html").to_string();
+        if !server.handlebars.register_template_string("layout", tpl_data).is_ok() {
             println!("Failed to register layout template");
         }
 
@@ -48,7 +48,7 @@ impl WebServer {
 
     pub fn run_webserver(self)
     {
-        let webserver = match Server::http(("0.0.0.0", 5380)) {
+        let webserver = match Server::http(("0.0.0.0", self.context.api_port)) {
             Ok(x) => x,
             Err(e) => {
                 println!("Failed to start web server: {:?}", e);

@@ -4,7 +4,7 @@ use std::io::Result;
 use std::sync::Arc;
 
 use dns::resolve::{DnsResolver,RecursiveDnsResolver,ForwardingDnsResolver};
-use dns::udp::DnsUdpClient;
+use dns::client::DnsUdpClient;
 use dns::cache::SynchronizedCache;
 use dns::authority::Authority;
 
@@ -12,9 +12,13 @@ pub struct ServerContext {
     pub authority: Authority,
     pub cache: SynchronizedCache,
     pub udp_client: DnsUdpClient,
-    pub listen_port: u16,
+    pub dns_port: u16,
+    pub api_port: u16,
     pub forward_server: Option<(String, u16)>,
-    pub allow_recursive: bool
+    pub allow_recursive: bool,
+    pub enable_udp: bool,
+    pub enable_tcp: bool,
+    pub enable_api: bool,
 }
 
 impl ServerContext {
@@ -23,9 +27,13 @@ impl ServerContext {
             authority: Authority::new(),
             cache: SynchronizedCache::new(),
             udp_client: DnsUdpClient::new(),
-            listen_port: 53,
+            dns_port: 53,
+            api_port: 5380,
             forward_server: None,
-            allow_recursive: true
+            allow_recursive: true,
+            enable_udp: true,
+            enable_tcp: true,
+            enable_api: true
         }
     }
 

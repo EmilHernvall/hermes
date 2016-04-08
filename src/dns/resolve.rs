@@ -141,7 +141,7 @@ impl DnsResolver for RecursiveDnsResolver {
 
             // Start querying name servers
             loop {
-                println!("attempting lookup of {:?} {} with ns {}", qtype, qname, ns);
+                //println!("attempting lookup of {:?} {} with ns {}", qtype, qname, ns);
 
                 let ns_copy = ns.clone();
 

@@ -1,4 +1,3 @@
-use std::path::Path;
 use std::io::{Result, Error, ErrorKind, Read};
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -171,7 +170,8 @@ impl Action for AuthorityAction {
     }
 
     fn initialize(&self, server: &mut WebServer) {
-        if !server.handlebars.register_template_file("authority", Path::new("templates/authority.html")).is_ok() {
+        let tpl_data = include_str!("templates/authority.html").to_string();
+        if !server.handlebars.register_template_string("authority", tpl_data).is_ok() {
             println!("Failed to register authority template");
             return;
         }
@@ -307,7 +307,8 @@ impl Action for ZoneAction {
     }
 
     fn initialize(&self, server: &mut WebServer) {
-        if !server.handlebars.register_template_file("zone", Path::new("templates/zone.html")).is_ok() {
+        let tpl_data = include_str!("templates/zone.html").to_string();
+        if !server.handlebars.register_template_string("zone", tpl_data).is_ok() {
             println!("Failed to register zone template");
             return;
         }
