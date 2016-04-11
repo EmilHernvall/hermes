@@ -89,7 +89,7 @@ fn resolve_cnames(lookup_list: &Vec<ResourceRecord>,
 ///
 /// This function will always return a valid packet, even if the request could not
 /// be performed, since we still want to send something back to the client.
-fn execute_query(context: Arc<ServerContext>, request: &DnsPacket) -> DnsPacket
+pub fn execute_query(context: Arc<ServerContext>, request: &DnsPacket) -> DnsPacket
 {
     let mut packet = DnsPacket::new();
     packet.header.id = request.header.id;
@@ -321,3 +321,191 @@ impl DnsServer for DnsTcpServer {
         true
     }
 }
+
+#[cfg(test)]
+mod tests {
+
+    use std::sync::Arc;
+    use std::net::Ipv4Addr;
+    use std::io::{Error, ErrorKind};
+
+    use dns::protocol::{DnsPacket, DnsQuestion, QueryType, ResourceRecord, ResultCode};
+
+    use super::*;
+
+    use dns::context::tests::create_test_context;
+
+    fn build_query(qname: &str, qtype: QueryType) -> DnsPacket {
+        let mut query_packet = DnsPacket::new();
+        query_packet.header.recursion_desired = true;
+
+        query_packet.questions.push(DnsQuestion::new(&qname.to_string(), qtype));
+
+        query_packet
+    }
+
+    #[test]
+    fn test_execute_query() {
+
+        // Construct a context to execute some queries successfully
+        let mut context = create_test_context(
+            Box::new(|qname, qtype, _, _| {
+                let mut packet = DnsPacket::new();
+
+                if qname == "google.com" {
+                    packet.answers.push(ResourceRecord::A {
+                        domain: "google.com".to_string(),
+                        addr: "127.0.0.1".parse::<Ipv4Addr>().unwrap(),
+                        ttl: 3600
+                    });
+                } else if qname == "www.facebook.com" && qtype == QueryType::CNAME {
+                    packet.answers.push(ResourceRecord::CNAME {
+                        domain: "www.facebook.com".to_string(),
+                        host: "cdn.facebook.com".to_string(),
+                        ttl: 3600
+                    });
+                    packet.answers.push(ResourceRecord::A {
+                        domain: "cdn.facebook.com".to_string(),
+                        addr: "127.0.0.1".parse::<Ipv4Addr>().unwrap(),
+                        ttl: 3600
+                    });
+                } else if qname == "www.microsoft.com" && qtype == QueryType::CNAME {
+                    packet.answers.push(ResourceRecord::CNAME {
+                        domain: "www.microsoft.com".to_string(),
+                        host: "cdn.microsoft.com".to_string(),
+                        ttl: 3600
+                    });
+                } else if qname == "cdn.microsoft.com" && qtype == QueryType::A {
+                    packet.answers.push(ResourceRecord::A {
+                        domain: "cdn.microsoft.com".to_string(),
+                        addr: "127.0.0.1".parse::<Ipv4Addr>().unwrap(),
+                        ttl: 3600
+                    });
+                } else {
+                    packet.header.rescode = ResultCode::NXDOMAIN;
+                }
+
+                Ok(packet)
+            }));
+
+        match Arc::get_mut(&mut context) {
+            Some(mut ctx) => {
+                ctx.forward_server = Some(("127.0.0.1".to_string(), 53));
+            },
+            None => panic!()
+        }
+
+        // A successful resolve
+        {
+            let res = execute_query(context.clone(),
+                                    &build_query("google.com", QueryType::A));
+            assert_eq!(1, res.answers.len());
+
+            match res.answers[0] {
+                ResourceRecord::A { ref domain, .. } => {
+                    assert_eq!("google.com", domain);
+                },
+                _ => panic!()
+            }
+        };
+
+        // A successful resolve, that also resolves a CNAME without recursive lookup
+        {
+            let res = execute_query(context.clone(),
+                                    &build_query("www.facebook.com", QueryType::CNAME));
+            assert_eq!(2, res.answers.len());
+
+            match res.answers[0] {
+                ResourceRecord::CNAME { ref domain, .. } => {
+                    assert_eq!("www.facebook.com", domain);
+                },
+                _ => panic!()
+            }
+
+            match res.answers[1] {
+                ResourceRecord::A { ref domain, .. } => {
+                    assert_eq!("cdn.facebook.com", domain);
+                },
+                _ => panic!()
+            }
+        };
+
+        // A successful resolve, that also resolves a CNAME through recursive lookup
+        {
+            let res = execute_query(context.clone(),
+                                    &build_query("www.microsoft.com", QueryType::CNAME));
+            assert_eq!(2, res.answers.len());
+
+            match res.answers[0] {
+                ResourceRecord::CNAME { ref domain, .. } => {
+                    assert_eq!("www.microsoft.com", domain);
+                },
+                _ => panic!()
+            }
+
+            match res.answers[1] {
+                ResourceRecord::A { ref domain, .. } => {
+                    assert_eq!("cdn.microsoft.com", domain);
+                },
+                _ => panic!()
+            }
+        };
+
+        // An unsuccessful resolve, but without any error
+        {
+            let res = execute_query(context.clone(),
+                                    &build_query("yahoo.com", QueryType::A));
+            assert_eq!(ResultCode::NXDOMAIN, res.header.rescode);
+            assert_eq!(0, res.answers.len());
+        };
+
+        // Disable recursive resolves to generate a failure
+        match Arc::get_mut(&mut context) {
+            Some(mut ctx) => {
+                ctx.allow_recursive = false;
+            },
+            None => panic!()
+        }
+
+        // This should generate an error code, since recursive resolves are
+        // no longer allowed
+        {
+            let res = execute_query(context.clone(),
+                                    &build_query("yahoo.com", QueryType::A));
+            assert_eq!(ResultCode::REFUSED, res.header.rescode);
+            assert_eq!(0, res.answers.len());
+        };
+
+
+        // Send a query without a question, which should fail with an error code
+        {
+            let query_packet = DnsPacket::new();
+            let res = execute_query(context.clone(), &query_packet);
+            assert_eq!(ResultCode::FORMERR, res.header.rescode);
+            assert_eq!(0, res.answers.len());
+        };
+
+        // Now construct a context where the dns client will return a failure
+        let mut context2 = create_test_context(
+            Box::new(|_, _, _, _| {
+                Err(Error::new(ErrorKind::NotFound, "Fail"))
+            }));
+
+        match Arc::get_mut(&mut context2) {
+            Some(mut ctx) => {
+                ctx.forward_server = Some(("127.0.0.1".to_string(), 53));
+            },
+            None => panic!()
+        }
+
+        // We expect this to set the server failure rescode
+        {
+            let res = execute_query(context2.clone(),
+                                    &build_query("yahoo.com", QueryType::A));
+            assert_eq!(ResultCode::SERVFAIL, res.header.rescode);
+            assert_eq!(0, res.answers.len());
+        };
+
+    }
+}
+

@@ -113,9 +113,11 @@ impl Cache {
         }
         self.fill_queryresult(qname, &QueryType::NS, &mut qr.authorities, false);
 
-        for authority in &qr.authorities {
-            if let ResourceRecord::NS { ref host, .. } = *authority {
-                self.fill_queryresult(host, &QueryType::A, &mut qr.resources, false);
+        if qtype == QueryType::NS {
+            for authority in &qr.authorities {
+                if let ResourceRecord::NS { ref host, .. } = *authority {
+                    self.fill_queryresult(host, &QueryType::A, &mut qr.resources, true);
+                }
             }
         }
 

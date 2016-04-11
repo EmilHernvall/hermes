@@ -883,21 +883,6 @@ impl DnsPacket {
 
         Ok(())
     }
-
-    /*pub fn has_soa(&self, qname: &str) -> bool {
-
-        for auth in &self.authorities {
-            if let ResourceRecord::SOA(ref domain, _, _, _, _, _, _, _, _) = *auth {
-                if !qname.to_lowercase().ends_with(&domain.to_lowercase()) {
-                    continue;
-                }
-
-                return true;
-            }
-        }
-
-        false
-    }*/
 }
 
 #[cfg(test)]

@@ -13,6 +13,7 @@ use dns::buffer::{PacketBuffer, BytePacketBuffer};
 use dns::protocol::{DnsPacket, DnsQuestion, QueryType};
 
 pub trait DnsClient {
+    fn run(&self) -> Result<()>;
     fn send_query(&self,
                   qname: &String,
                   qtype: QueryType,
@@ -59,12 +60,16 @@ impl DnsUdpClient {
         }
     }
 
+}
+
+impl DnsClient for DnsUdpClient {
+
     /// The run method launches a worker thread. Unless this thread is running, no
     /// responses will ever be generated, and clients will just block indefinitely.
     ///
     /// This method is safe to invoke multiple times, since each invocation will
     /// just start a new worker thread.
-    pub fn run(&self) -> Result<()> {
+    fn run(&self) -> Result<()> {
 
         let socket_copy = try!(self.socket.try_clone());
         let pending_queries_lock = self.pending_queries.clone();
@@ -119,9 +124,6 @@ impl DnsUdpClient {
 
         Ok(())
     }
-}
-
-impl DnsClient for DnsUdpClient {
 
     /// Send a DNS query
     ///
@@ -173,5 +175,47 @@ impl DnsClient for DnsUdpClient {
 
         // Otherwise, fail
         Err(Error::new(ErrorKind::InvalidInput, "Lookup failed"))
+    }
+}
+
+#[cfg(test)]
+pub mod tests {
+
+    use std::io::Result;
+
+    use dns::protocol::{DnsPacket,QueryType};
+    use super::*;
+
+    pub type StubCallback = Fn(&String, QueryType, (&str, u16), bool) -> Result<DnsPacket>;
+
+    pub struct DnsStubClient {
+        callback: Box<StubCallback>
+    }
+
+    impl<'a> DnsStubClient {
+        pub fn new(callback: Box<StubCallback>) -> DnsStubClient {
+            DnsStubClient {
+                callback: callback
+            }
+        }
+    }
+
+    unsafe impl Send for DnsStubClient {}
+    unsafe impl Sync for DnsStubClient {}
+
+    impl DnsClient for DnsStubClient {
+
+        fn run(&self) -> Result<()> {
+            Ok(())
+        }
+
+        fn send_query(&self,
+                      qname: &String,
+                      qtype: QueryType,
+                      server: (&str, u16),
+                      recursive: bool) -> Result<DnsPacket> {
+
+            (self.callback)(qname, qtype, server, recursive)
+        }
     }
 }
