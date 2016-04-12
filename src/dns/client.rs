@@ -143,7 +143,11 @@ impl DnsClient for DnsUdpClient {
 
         if let Ok(seq_cell) = self.seq.lock() {
             packet.header.id = seq_cell.get();
-            seq_cell.set(packet.header.id+1);
+            if packet.header.id == 0xFFFF {
+                seq_cell.set(0);
+            } else {
+                seq_cell.set(packet.header.id+1);
+            }
         }
         packet.header.questions = 1;
         packet.header.recursion_desired = recursive;
