@@ -1,6 +1,5 @@
 //! client for sending DNS queries to other servers
 
-use std::cell::Cell;
 use std::io::Result;
 use std::io::{Error, ErrorKind};
 use std::marker::{Send, Sync};
@@ -8,6 +7,7 @@ use std::net::UdpSocket;
 use std::sync::mpsc::{channel, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread::spawn;
+use std::sync::atomic::{AtomicUsize,Ordering};
 
 use chrono::*;
 
@@ -15,6 +15,9 @@ use dns::buffer::{PacketBuffer, BytePacketBuffer};
 use dns::protocol::{DnsPacket, DnsQuestion, QueryType};
 
 pub trait DnsClient {
+    fn get_sent_count(&self) -> usize;
+    fn get_failed_count(&self) -> usize;
+
     fn run(&self) -> Result<()>;
     fn send_query(&self,
                   qname: &String,
@@ -32,8 +35,11 @@ pub trait DnsClient {
 /// and the caller will block on the channel until the a response is received.
 pub struct DnsUdpClient {
 
+    total_sent: AtomicUsize,
+    total_failed: AtomicUsize,
+
     /// Counter for assigning packet ids
-    seq: Mutex<Cell<u16>>,
+    seq: AtomicUsize,
 
     /// The listener socket
     socket: UdpSocket,
@@ -57,7 +63,9 @@ unsafe impl Sync for DnsUdpClient {}
 impl DnsUdpClient {
     pub fn new() -> DnsUdpClient {
         DnsUdpClient {
-            seq: Mutex::new(Cell::new(0)),
+            total_sent: AtomicUsize::new(0),
+            total_failed: AtomicUsize::new(0),
+            seq: AtomicUsize::new(0),
             socket: UdpSocket::bind(("0.0.0.0", 34255)).unwrap(),
             pending_queries: Arc::new(Mutex::new(Vec::new()))
         }
@@ -66,6 +74,14 @@ impl DnsUdpClient {
 }
 
 impl DnsClient for DnsUdpClient {
+
+    fn get_sent_count(&self) -> usize {
+        self.total_sent.load(Ordering::Acquire)
+    }
+
+    fn get_failed_count(&self) -> usize {
+        self.total_failed.load(Ordering::Acquire)
+    }
 
     /// The run method launches a worker thread. Unless this thread is running, no
     /// responses will ever be generated, and clients will just block indefinitely.
@@ -148,17 +164,16 @@ impl DnsClient for DnsUdpClient {
                   server: (&str, u16),
                   recursive: bool) -> Result<DnsPacket> {
 
+        let _ = self.total_sent.fetch_add(1, Ordering::Release);
+
         // Prepare request
         let mut packet = DnsPacket::new();
 
-        if let Ok(seq_cell) = self.seq.lock() {
-            packet.header.id = seq_cell.get();
-            if packet.header.id == 0xFFFF {
-                seq_cell.set(0);
-            } else {
-                seq_cell.set(packet.header.id+1);
-            }
+        packet.header.id = self.seq.fetch_add(1, Ordering::SeqCst) as u16;
+        if packet.header.id + 1 == 0xFFFF {
+            self.seq.compare_and_swap(0xFFFF, 0, Ordering::SeqCst);
         }
+
         packet.header.questions = 1;
         packet.header.recursion_desired = recursive;
 
@@ -187,11 +202,15 @@ impl DnsClient for DnsUdpClient {
         if let Ok(res) = rx.recv() {
             match res {
                 Some(qr) => return Ok(qr),
-                None => return Err(Error::new(ErrorKind::TimedOut, "Request timed out"))
+                None => {
+                    let _ = self.total_failed.fetch_add(1, Ordering::Release);
+                    return Err(Error::new(ErrorKind::TimedOut, "Request timed out"))
+                }
             }
         }
 
         // Otherwise, fail
+        let _ = self.total_failed.fetch_add(1, Ordering::Release);
         Err(Error::new(ErrorKind::InvalidInput, "Lookup failed"))
     }
 }
@@ -222,6 +241,14 @@ pub mod tests {
     unsafe impl Sync for DnsStubClient {}
 
     impl DnsClient for DnsStubClient {
+
+        fn get_sent_count(&self) -> usize {
+            0
+        }
+
+        fn get_failed_count(&self) -> usize {
+            0
+        }
 
         fn run(&self) -> Result<()> {
             Ok(())

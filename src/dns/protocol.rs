@@ -748,8 +748,8 @@ impl DnsPacket {
 
     pub fn get_ttl_from_soa(&self) -> Option<u32> {
         for answer in &self.authorities {
-            if let DnsRecord::SOA { retry, .. } = *answer {
-                return Some(retry);
+            if let DnsRecord::SOA { minimum, .. } = *answer {
+                return Some(minimum);
             }
         }
 

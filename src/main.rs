@@ -24,6 +24,7 @@ use dns::context::ServerContext;
 use web::server::WebServer;
 use web::cache::CacheAction;
 use web::authority::{AuthorityAction,ZoneAction};
+use web::index::IndexAction;
 
 fn print_usage(program: &str, opts: Options) {
     let brief = format!("Usage: {} [options]", program);
@@ -113,6 +114,7 @@ fn main() {
         webserver.register_action(Box::new(CacheAction::new(context.clone())));
         webserver.register_action(Box::new(AuthorityAction::new(context.clone())));
         webserver.register_action(Box::new(ZoneAction::new(context.clone())));
+        webserver.register_action(Box::new(IndexAction::new(context.clone())));
 
         webserver.run_webserver();
     }

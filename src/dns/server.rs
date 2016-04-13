@@ -4,6 +4,7 @@ use std::io::{Result, Write};
 use std::net::{UdpSocket, TcpListener, TcpStream, Shutdown};
 use std::sync::Arc;
 use std::thread::spawn;
+use std::sync::atomic::Ordering;
 
 use dns::resolve::DnsResolver;
 use dns::protocol::{DnsPacket, QueryType, DnsRecord, ResultCode};
@@ -230,6 +231,7 @@ impl DnsServer for DnsUdpServer {
         // Start servicing requests
         spawn(move || {
             loop {
+                let _ = self.context.statistics.udp_query_count.fetch_add(1, Ordering::Release);
                 match self.handle_request(&socket) {
                     Ok(_) => {},
                     Err(err) => {
@@ -314,6 +316,7 @@ impl DnsServer for DnsTcpServer {
                     }
                 };
 
+                let _ = self.context.statistics.tcp_query_count.fetch_add(1, Ordering::Release);
                 self.handle_request(stream);
             }
         });

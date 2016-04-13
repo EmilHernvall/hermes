@@ -2,11 +2,27 @@
 
 use std::io::Result;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize,Ordering};
 
 use dns::resolve::{DnsResolver,RecursiveDnsResolver,ForwardingDnsResolver};
 use dns::client::{DnsClient,DnsUdpClient};
 use dns::cache::SynchronizedCache;
 use dns::authority::Authority;
+
+pub struct ServerStatistics {
+    pub tcp_query_count: AtomicUsize,
+    pub udp_query_count: AtomicUsize
+}
+
+impl ServerStatistics {
+    pub fn get_tcp_query_count(&self) -> usize {
+        self.tcp_query_count.load(Ordering::Acquire)
+    }
+
+    pub fn get_udp_query_count(&self) -> usize {
+        self.udp_query_count.load(Ordering::Acquire)
+    }
+}
 
 pub struct ServerContext {
     pub authority: Authority,
@@ -19,6 +35,7 @@ pub struct ServerContext {
     pub enable_udp: bool,
     pub enable_tcp: bool,
     pub enable_api: bool,
+    pub statistics: ServerStatistics
 }
 
 impl ServerContext {
@@ -33,7 +50,11 @@ impl ServerContext {
             allow_recursive: true,
             enable_udp: true,
             enable_tcp: true,
-            enable_api: true
+            enable_api: true,
+            statistics: ServerStatistics {
+                tcp_query_count: AtomicUsize::new(0),
+                udp_query_count: AtomicUsize::new(0)
+            }
         }
     }
 
@@ -60,6 +81,7 @@ impl ServerContext {
 pub mod tests {
 
     use std::sync::Arc;
+    use std::sync::atomic::AtomicUsize;
 
     use dns::authority::Authority;
     use dns::cache::SynchronizedCache;
@@ -80,7 +102,11 @@ pub mod tests {
             allow_recursive: true,
             enable_udp: true,
             enable_tcp: true,
-            enable_api: true
+            enable_api: true,
+            statistics: ServerStatistics {
+                tcp_query_count: AtomicUsize::new(0),
+                udp_query_count: AtomicUsize::new(0)
+            }
         })
 
     }
