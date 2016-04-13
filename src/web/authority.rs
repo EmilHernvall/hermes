@@ -11,7 +11,7 @@ use rustc_serialize::json::{self, ToJson, Json};
 
 use dns::context::ServerContext;
 use dns::authority::Zone;
-use dns::protocol::ResourceRecord;
+use dns::protocol::DnsRecord;
 
 use web::util::{FormDataDecodable,rr_to_json,decode_json,parse_formdata};
 use web::server::{Action,WebServer};
@@ -109,7 +109,7 @@ impl FormDataDecodable<RecordRequest> for RecordRequest {
 }
 
 impl RecordRequest {
-    fn to_resourcerecord(self) -> Option<ResourceRecord> {
+    fn to_resourcerecord(self) -> Option<DnsRecord> {
         match self.recordtype.as_str() {
             "A" => {
                 let host = match self.host.and_then(|x| x.parse::<Ipv4Addr>().ok()) {
@@ -117,7 +117,7 @@ impl RecordRequest {
                     None => return None
                 };
 
-                Some(ResourceRecord::A {
+                Some(DnsRecord::A {
                     domain: self.domain,
                     addr: host,
                     ttl: self.ttl
@@ -129,7 +129,7 @@ impl RecordRequest {
                     None => return None
                 };
 
-                Some(ResourceRecord::AAAA {
+                Some(DnsRecord::AAAA {
                     domain: self.domain,
                     addr: host,
                     ttl: self.ttl
@@ -141,7 +141,7 @@ impl RecordRequest {
                     None => return None
                 };
 
-                Some(ResourceRecord::CNAME {
+                Some(DnsRecord::CNAME {
                     domain: self.domain,
                     host: host,
                     ttl: self.ttl

@@ -14,7 +14,7 @@ use dns::buffer::{PacketBuffer, VectorPacketBuffer};
 /// id of an unknown query when compiling the reply. An integer can be converted
 /// to a querytype using the `from_num` function, and back to an integer using
 /// the `to_num` method.
-#[derive(PartialEq,Eq,Debug,Clone)]
+#[derive(PartialEq,Eq,Debug,Clone,Hash)]
 pub enum QueryType {
     UNKNOWN(u16),
     A, // 1
@@ -60,13 +60,13 @@ impl QueryType {
     }
 }
 
-/// ResourceRecord is the primary representation of a DNS record
+/// DnsRecord is the primary representation of a DNS record
 ///
 /// This enumeration is used for reading as well as writing records, from network
 /// and from disk (for storage of authority data).
 #[derive(Debug,Clone,PartialEq,Eq,Hash,PartialOrd,Ord)]
 #[allow(dead_code)]
-pub enum ResourceRecord {
+pub enum DnsRecord {
     UNKNOWN {
         domain: String,
         qtype: u16,
@@ -127,11 +127,11 @@ pub enum ResourceRecord {
         packet_len: u16,
         flags: u32,
         data: String
-    }// 41
+    } // 41
 }
 
-impl ResourceRecord {
-    pub fn read<T: PacketBuffer>(buffer: &mut T) -> Result<ResourceRecord> {
+impl DnsRecord {
+    pub fn read<T: PacketBuffer>(buffer: &mut T) -> Result<DnsRecord> {
         let mut domain = String::new();
         let _ = try!(buffer.read_qname(&mut domain));
 
@@ -149,7 +149,7 @@ impl ResourceRecord {
                                          ((raw_addr >> 8) & 0xFF) as u8,
                                          ((raw_addr >> 0) & 0xFF) as u8);
 
-                return Ok(ResourceRecord::A {
+                return Ok(DnsRecord::A {
                     domain: domain,
                     addr: addr,
                     ttl: ttl
@@ -169,7 +169,7 @@ impl ResourceRecord {
                                          ((raw_addr4 >> 16) & 0xFFFF) as u16,
                                          ((raw_addr4 >> 0) & 0xFFFF) as u16);
 
-                return Ok(ResourceRecord::AAAA {
+                return Ok(DnsRecord::AAAA {
                     domain: domain,
                     addr: addr,
                     ttl: ttl
@@ -179,7 +179,7 @@ impl ResourceRecord {
                 let mut ns = String::new();
                 try!(buffer.read_qname(&mut ns));
 
-                return Ok(ResourceRecord::NS {
+                return Ok(DnsRecord::NS {
                     domain: domain,
                     host: ns,
                     ttl: ttl
@@ -189,7 +189,7 @@ impl ResourceRecord {
                 let mut cname = String::new();
                 try!(buffer.read_qname(&mut cname));
 
-                return Ok(ResourceRecord::CNAME {
+                return Ok(DnsRecord::CNAME {
                     domain: domain,
                     host: cname,
                     ttl: ttl
@@ -203,7 +203,7 @@ impl ResourceRecord {
                 let mut srv = String::new();
                 try!(buffer.read_qname(&mut srv));
 
-                return Ok(ResourceRecord::SRV {
+                return Ok(DnsRecord::SRV {
                     domain: domain,
                     priority: priority,
                     weight: weight,
@@ -217,7 +217,7 @@ impl ResourceRecord {
                 let mut mx = String::new();
                 try!(buffer.read_qname(&mut mx));
 
-                return Ok(ResourceRecord::MX {
+                return Ok(DnsRecord::MX {
                     domain: domain,
                     priority: priority,
                     host: mx,
@@ -237,7 +237,7 @@ impl ResourceRecord {
                 let expire = try!(buffer.read_u32());
                 let minimum = try!(buffer.read_u32());
 
-                return Ok(ResourceRecord::SOA {
+                return Ok(DnsRecord::SOA {
                     domain: domain,
                     mname: mname,
                     rname: rname,
@@ -257,7 +257,7 @@ impl ResourceRecord {
 
                 try!(buffer.step(data_len as usize));
 
-                return Ok(ResourceRecord::TXT {
+                return Ok(DnsRecord::TXT {
                     domain: domain,
                     data: txt,
                     ttl: ttl
@@ -270,7 +270,7 @@ impl ResourceRecord {
                 data.push_str(&String::from_utf8_lossy(try!(buffer.get_range(cur_pos, data_len as usize))));
                 try!(buffer.step(data_len as usize));
 
-                return Ok(ResourceRecord::OPT {
+                return Ok(DnsRecord::OPT {
                     packet_len: class,
                     flags: ttl,
                     data: data
@@ -279,7 +279,7 @@ impl ResourceRecord {
             QueryType::UNKNOWN(_) => {
                 try!(buffer.step(data_len as usize));
 
-                return Ok(ResourceRecord::UNKNOWN { domain: domain,
+                return Ok(DnsRecord::UNKNOWN { domain: domain,
                                                     qtype: qtype_num,
                                                     data_len: data_len,
                                                     ttl: ttl });
@@ -292,7 +292,7 @@ impl ResourceRecord {
         let start_pos = buffer.pos();
 
         match *self {
-            ResourceRecord::A { ref domain, ref addr, ttl } => {
+            DnsRecord::A { ref domain, ref addr, ttl } => {
                 try!(buffer.write_qname(domain));
                 try!(buffer.write_u16(QueryType::A.to_num()));
                 try!(buffer.write_u16(1));
@@ -305,7 +305,7 @@ impl ResourceRecord {
                 try!(buffer.write_u8(octets[2]));
                 try!(buffer.write_u8(octets[3]));
             },
-            ResourceRecord::AAAA { ref domain, ref addr, ttl } => {
+            DnsRecord::AAAA { ref domain, ref addr, ttl } => {
                 try!(buffer.write_qname(domain));
                 try!(buffer.write_u16(QueryType::AAAA.to_num()));
                 try!(buffer.write_u16(1));
@@ -316,7 +316,7 @@ impl ResourceRecord {
                     try!(buffer.write_u16(*octet));
                 }
             },
-            ResourceRecord::NS { ref domain, ref host, ttl } => {
+            DnsRecord::NS { ref domain, ref host, ttl } => {
                 try!(buffer.write_qname(domain));
                 try!(buffer.write_u16(QueryType::NS.to_num()));
                 try!(buffer.write_u16(1));
@@ -330,7 +330,7 @@ impl ResourceRecord {
                 let size = buffer.pos() - (pos + 2);
                 try!(buffer.set_u16(pos, size as u16));
             },
-            ResourceRecord::CNAME { ref domain, ref host, ttl } => {
+            DnsRecord::CNAME { ref domain, ref host, ttl } => {
                 try!(buffer.write_qname(domain));
                 try!(buffer.write_u16(QueryType::CNAME.to_num()));
                 try!(buffer.write_u16(1));
@@ -344,7 +344,7 @@ impl ResourceRecord {
                 let size = buffer.pos() - (pos + 2);
                 try!(buffer.set_u16(pos, size as u16));
             },
-            ResourceRecord::SRV { ref domain, priority, weight, port, ref host, ttl } => {
+            DnsRecord::SRV { ref domain, priority, weight, port, ref host, ttl } => {
                 try!(buffer.write_qname(domain));
                 try!(buffer.write_u16(QueryType::SRV.to_num()));
                 try!(buffer.write_u16(1));
@@ -361,7 +361,7 @@ impl ResourceRecord {
                 let size = buffer.pos() - (pos + 2);
                 try!(buffer.set_u16(pos, size as u16));
             },
-            ResourceRecord::MX { ref domain, priority, ref host, ttl } => {
+            DnsRecord::MX { ref domain, priority, ref host, ttl } => {
                 try!(buffer.write_qname(domain));
                 try!(buffer.write_u16(QueryType::MX.to_num()));
                 try!(buffer.write_u16(1));
@@ -376,7 +376,7 @@ impl ResourceRecord {
                 let size = buffer.pos() - (pos + 2);
                 try!(buffer.set_u16(pos, size as u16));
             },
-            ResourceRecord::SOA {
+            DnsRecord::SOA {
                 ref domain,
                 ref mname,
                 ref rname,
@@ -407,7 +407,7 @@ impl ResourceRecord {
                 let size = buffer.pos() - (pos + 2);
                 try!(buffer.set_u16(pos, size as u16));
             },
-            ResourceRecord::TXT { ref domain, ref data, ttl } => {
+            DnsRecord::TXT { ref domain, ref data, ttl } => {
                 try!(buffer.write_qname(domain));
                 try!(buffer.write_u16(QueryType::TXT.to_num()));
                 try!(buffer.write_u16(1));
@@ -418,9 +418,9 @@ impl ResourceRecord {
                     try!(buffer.write_u8(*b));
                 }
             },
-            ResourceRecord::OPT { .. } => {
+            DnsRecord::OPT { .. } => {
             },
-            ResourceRecord::UNKNOWN { .. } => {
+            DnsRecord::UNKNOWN { .. } => {
                 println!("Skipping record: {:?}", self);
             }
         }
@@ -430,46 +430,46 @@ impl ResourceRecord {
 
     pub fn get_querytype(&self) -> QueryType {
         match *self {
-            ResourceRecord::A { .. } => QueryType::A,
-            ResourceRecord::AAAA { .. } => QueryType::AAAA,
-            ResourceRecord::NS { .. } => QueryType::NS,
-            ResourceRecord::CNAME { .. } => QueryType::CNAME,
-            ResourceRecord::SRV { .. } => QueryType::SRV,
-            ResourceRecord::MX { .. } => QueryType::MX,
-            ResourceRecord::UNKNOWN { qtype, .. } => QueryType::UNKNOWN(qtype),
-            ResourceRecord::SOA { .. } => QueryType::SOA,
-            ResourceRecord::TXT { .. } => QueryType::TXT,
-            ResourceRecord::OPT { .. } => QueryType::OPT
+            DnsRecord::A { .. } => QueryType::A,
+            DnsRecord::AAAA { .. } => QueryType::AAAA,
+            DnsRecord::NS { .. } => QueryType::NS,
+            DnsRecord::CNAME { .. } => QueryType::CNAME,
+            DnsRecord::SRV { .. } => QueryType::SRV,
+            DnsRecord::MX { .. } => QueryType::MX,
+            DnsRecord::UNKNOWN { qtype, .. } => QueryType::UNKNOWN(qtype),
+            DnsRecord::SOA { .. } => QueryType::SOA,
+            DnsRecord::TXT { .. } => QueryType::TXT,
+            DnsRecord::OPT { .. } => QueryType::OPT
         }
     }
 
     pub fn get_domain(&self) -> Option<String> {
         match *self {
-            ResourceRecord::A{ ref domain, .. } => Some(domain.clone()),
-            ResourceRecord::AAAA { ref domain, .. } => Some(domain.clone()),
-            ResourceRecord::NS { ref domain, .. } => Some(domain.clone()),
-            ResourceRecord::CNAME { ref domain, .. } => Some(domain.clone()),
-            ResourceRecord::SRV { ref domain, .. } => Some(domain.clone()),
-            ResourceRecord::MX { ref domain, .. } => Some(domain.clone()),
-            ResourceRecord::UNKNOWN { ref domain, .. } => Some(domain.clone()),
-            ResourceRecord::SOA { ref domain, .. } => Some(domain.clone()),
-            ResourceRecord::TXT { ref domain, .. } => Some(domain.clone()),
-            ResourceRecord::OPT { .. } => None
+            DnsRecord::A{ ref domain, .. } => Some(domain.clone()),
+            DnsRecord::AAAA { ref domain, .. } => Some(domain.clone()),
+            DnsRecord::NS { ref domain, .. } => Some(domain.clone()),
+            DnsRecord::CNAME { ref domain, .. } => Some(domain.clone()),
+            DnsRecord::SRV { ref domain, .. } => Some(domain.clone()),
+            DnsRecord::MX { ref domain, .. } => Some(domain.clone()),
+            DnsRecord::UNKNOWN { ref domain, .. } => Some(domain.clone()),
+            DnsRecord::SOA { ref domain, .. } => Some(domain.clone()),
+            DnsRecord::TXT { ref domain, .. } => Some(domain.clone()),
+            DnsRecord::OPT { .. } => None
         }
     }
 
     pub fn get_ttl(&self) -> u32 {
         match *self {
-            ResourceRecord::A { ttl, .. } => ttl,
-            ResourceRecord::AAAA { ttl, .. } => ttl,
-            ResourceRecord::NS { ttl, .. } => ttl,
-            ResourceRecord::CNAME { ttl, .. } => ttl,
-            ResourceRecord::SRV { ttl, .. } => ttl,
-            ResourceRecord::MX { ttl, .. } => ttl,
-            ResourceRecord::UNKNOWN { ttl, .. } => ttl,
-            ResourceRecord::SOA { ttl, .. } => ttl,
-            ResourceRecord::TXT { ttl, .. } => ttl,
-            ResourceRecord::OPT { .. } => 0
+            DnsRecord::A { ttl, .. } => ttl,
+            DnsRecord::AAAA { ttl, .. } => ttl,
+            DnsRecord::NS { ttl, .. } => ttl,
+            DnsRecord::CNAME { ttl, .. } => ttl,
+            DnsRecord::SRV { ttl, .. } => ttl,
+            DnsRecord::MX { ttl, .. } => ttl,
+            DnsRecord::UNKNOWN { ttl, .. } => ttl,
+            DnsRecord::SOA { ttl, .. } => ttl,
+            DnsRecord::TXT { ttl, .. } => ttl,
+            DnsRecord::OPT { .. } => 0
         }
     }
 }
@@ -683,9 +683,9 @@ impl fmt::Display for DnsQuestion {
 pub struct DnsPacket {
     pub header: DnsHeader,
     pub questions: Vec<DnsQuestion>,
-    pub answers: Vec<ResourceRecord>,
-    pub authorities: Vec<ResourceRecord>,
-    pub resources: Vec<ResourceRecord>
+    pub answers: Vec<DnsRecord>,
+    pub authorities: Vec<DnsRecord>,
+    pub resources: Vec<DnsRecord>
 }
 
 impl DnsPacket {
@@ -711,15 +711,15 @@ impl DnsPacket {
         }
 
         for _ in 0..result.header.answers {
-            let rec = try!(ResourceRecord::read(buffer));
+            let rec = try!(DnsRecord::read(buffer));
             result.answers.push(rec);
         }
         for _ in 0..result.header.authoritative_entries {
-            let rec = try!(ResourceRecord::read(buffer));
+            let rec = try!(DnsRecord::read(buffer));
             result.authorities.push(rec);
         }
         for _ in 0..result.header.resource_entries {
-            let rec = try!(ResourceRecord::read(buffer));
+            let rec = try!(DnsRecord::read(buffer));
             result.resources.push(rec);
         }
 
@@ -746,11 +746,21 @@ impl DnsPacket {
         }
     }
 
+    pub fn get_ttl_from_soa(&self) -> Option<u32> {
+        for answer in &self.authorities {
+            if let DnsRecord::SOA { retry, .. } = *answer {
+                return Some(retry);
+            }
+        }
+
+        None
+    }
+
     pub fn get_random_a(&self) -> Option<String> {
         if self.answers.len() > 0 {
             let idx = random::<usize>() % self.answers.len();
             let a_record = &self.answers[idx];
-            if let &ResourceRecord::A{ ref addr, .. } = a_record {
+            if let &DnsRecord::A{ ref addr, .. } = a_record {
                 return Some(addr.to_string());
             }
         }
@@ -758,14 +768,14 @@ impl DnsPacket {
         None
     }
 
-    pub fn get_unresolved_cnames(&self) -> Vec<ResourceRecord> {
+    pub fn get_unresolved_cnames(&self) -> Vec<DnsRecord> {
 
         let mut unresolved = Vec::new();
         for answer in &self.answers {
             let mut matched = false;
-            if let ResourceRecord::CNAME { ref host, .. } = *answer {
+            if let DnsRecord::CNAME { ref host, .. } = *answer {
                 for answer2 in &self.answers {
-                    if let ResourceRecord::A { ref domain, .. } = *answer2 {
+                    if let DnsRecord::A { ref domain, .. } = *answer2 {
                         if domain == host {
                             matched = true;
                             break;
@@ -786,18 +796,18 @@ impl DnsPacket {
 
         let mut new_authorities = Vec::new();
         for auth in &self.authorities {
-            if let ResourceRecord::NS { ref domain, ref host, .. } = *auth {
+            if let DnsRecord::NS { ref domain, ref host, .. } = *auth {
                 if !qname.to_lowercase().ends_with(&domain.to_lowercase()) {
                     continue;
                 }
 
                 for rsrc in &self.resources {
-                    if let ResourceRecord::A{ ref domain, ref addr, ref ttl } = *rsrc {
+                    if let DnsRecord::A{ ref domain, ref addr, ref ttl } = *rsrc {
                         if domain != host {
                             continue;
                         }
 
-                        let rec = ResourceRecord::A {
+                        let rec = DnsRecord::A {
                             domain: host.clone(),
                             addr: addr.clone(),
                             ttl: *ttl
@@ -811,7 +821,7 @@ impl DnsPacket {
 
         if new_authorities.len() > 0 {
             let idx = random::<usize>() % new_authorities.len();
-            if let ResourceRecord::A { addr, .. } = new_authorities[idx] {
+            if let DnsRecord::A { addr, .. } = new_authorities[idx] {
                 return Some(addr.to_string());
             }
         }
@@ -823,7 +833,7 @@ impl DnsPacket {
 
         let mut new_authorities = Vec::new();
         for auth in &self.authorities {
-            if let ResourceRecord::NS { ref domain, ref host, .. } = *auth {
+            if let DnsRecord::NS { ref domain, ref host, .. } = *auth {
                 if !qname.to_lowercase().ends_with(&domain.to_lowercase()) {
                     continue;
                 }
@@ -899,23 +909,23 @@ mod tests {
         packet.header.response = true;
 
         packet.questions.push(DnsQuestion::new(&"google.com".to_string(), QueryType::NS));
-        //packet.answers.push(ResourceRecord::A("ns1.google.com".to_string(), "127.0.0.1".parse::<Ipv4Addr>().unwrap(), 3600));
-        packet.answers.push(ResourceRecord::NS {
+        //packet.answers.push(DnsRecord::A("ns1.google.com".to_string(), "127.0.0.1".parse::<Ipv4Addr>().unwrap(), 3600));
+        packet.answers.push(DnsRecord::NS {
             domain: "google.com".to_string(),
             host: "ns1.google.com".to_string(),
             ttl: 3600
         });
-        packet.answers.push(ResourceRecord::NS {
+        packet.answers.push(DnsRecord::NS {
             domain: "google.com".to_string(),
             host: "ns2.google.com".to_string(),
             ttl: 3600
         });
-        packet.answers.push(ResourceRecord::NS {
+        packet.answers.push(DnsRecord::NS {
             domain: "google.com".to_string(),
             host: "ns3.google.com".to_string(),
             ttl: 3600
         });
-        packet.answers.push(ResourceRecord::NS {
+        packet.answers.push(DnsRecord::NS {
             domain: "google.com".to_string(),
             host: "ns4.google.com".to_string(),
             ttl: 3600

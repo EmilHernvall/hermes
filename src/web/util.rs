@@ -6,7 +6,7 @@ use rustc_serialize::json::{self,ToJson,Json,DecodeResult,DecoderError};
 use rustc_serialize::Decodable;
 use tiny_http::Request;
 
-use dns::protocol::ResourceRecord;
+use dns::protocol::DnsRecord;
 
 pub trait FormDataDecodable<T> {
     fn from_formdata(fields: Vec<(String, String)>) -> Result<T>;
@@ -61,7 +61,7 @@ pub fn parse_formdata<R: Read>(reader: &mut R) -> Result<Vec<(String, String)>> 
     Ok(res)
 }
 
-pub fn rr_to_json(id: u32, rr: &ResourceRecord) -> Json {
+pub fn rr_to_json(id: u32, rr: &DnsRecord) -> Json {
     let mut d = BTreeMap::new();
 
     let mut qtype = String::new();
@@ -70,27 +70,27 @@ pub fn rr_to_json(id: u32, rr: &ResourceRecord) -> Json {
     d.insert("type".to_string(), qtype.to_json());
 
     match *rr {
-        ResourceRecord::A { ref domain, ref addr, ttl } => {
+        DnsRecord::A { ref domain, ref addr, ttl } => {
             d.insert("domain".to_string(), domain.to_json());
             d.insert("host".to_string(), addr.to_string().to_json());
             d.insert("ttl".to_string(), ttl.to_json());
         },
-        ResourceRecord::AAAA { ref domain, ref addr, ttl } => {
+        DnsRecord::AAAA { ref domain, ref addr, ttl } => {
             d.insert("domain".to_string(), domain.to_json());
             d.insert("host".to_string(), addr.to_string().to_json());
             d.insert("ttl".to_string(), ttl.to_json());
         },
-        ResourceRecord::NS { ref domain, ref host, ttl } => {
+        DnsRecord::NS { ref domain, ref host, ttl } => {
             d.insert("domain".to_string(), domain.to_json());
             d.insert("host".to_string(), host.to_json());
             d.insert("ttl".to_string(), ttl.to_json());
         },
-        ResourceRecord::CNAME { ref domain, ref host, ttl } => {
+        DnsRecord::CNAME { ref domain, ref host, ttl } => {
             d.insert("domain".to_string(), domain.to_json());
             d.insert("host".to_string(), host.to_json());
             d.insert("ttl".to_string(), ttl.to_json());
         },
-        ResourceRecord::SRV { ref domain, priority, weight, port, ref host, ttl } => {
+        DnsRecord::SRV { ref domain, priority, weight, port, ref host, ttl } => {
             d.insert("domain".to_string(), domain.to_json());
             d.insert("host".to_string(), host.to_json());
             d.insert("ttl".to_string(), ttl.to_json());
@@ -98,25 +98,25 @@ pub fn rr_to_json(id: u32, rr: &ResourceRecord) -> Json {
             d.insert("weight".to_string(), weight.to_json());
             d.insert("port".to_string(), port.to_json());
         },
-        ResourceRecord::MX { ref domain, priority, ref host, ttl } => {
+        DnsRecord::MX { ref domain, priority, ref host, ttl } => {
             d.insert("domain".to_string(), domain.to_json());
             d.insert("host".to_string(), (priority.to_string() + " " + host).to_json());
             d.insert("ttl".to_string(), ttl.to_json());
         },
-        ResourceRecord::UNKNOWN { ref domain, qtype, data_len, ttl } => {
+        DnsRecord::UNKNOWN { ref domain, qtype, data_len, ttl } => {
             d.insert("domain".to_string(), domain.to_json());
             d.insert("ttl".to_string(), ttl.to_json());
             d.insert("type".to_string(), qtype.to_json());
             d.insert("len".to_string(), data_len.to_json());
         },
-        ResourceRecord::SOA { .. } => {
+        DnsRecord::SOA { .. } => {
         },
-        ResourceRecord::TXT { ref domain, ref data, ttl } => {
+        DnsRecord::TXT { ref domain, ref data, ttl } => {
             d.insert("domain".to_string(), domain.to_json());
             d.insert("ttl".to_string(), ttl.to_json());
             d.insert("txt".to_string(), data.to_json());
         }
-        ResourceRecord::OPT { .. } => {
+        DnsRecord::OPT { .. } => {
         }
     }
 

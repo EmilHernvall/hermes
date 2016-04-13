@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::thread::spawn;
 
 use dns::resolve::DnsResolver;
-use dns::protocol::{DnsPacket, QueryType, ResourceRecord, ResultCode};
+use dns::protocol::{DnsPacket, QueryType, DnsRecord, ResultCode};
 use dns::buffer::{PacketBuffer, BytePacketBuffer, VectorPacketBuffer, StreamPacketBuffer};
 use dns::context::ServerContext;
 
@@ -47,13 +47,13 @@ pub trait DnsServer {
 /// Utility function for resolving domains referenced in for example CNAME or SRV
 /// records. This usually spares the client from having to perform additional
 /// lookups.
-fn resolve_cnames(lookup_list: &Vec<ResourceRecord>,
+fn resolve_cnames(lookup_list: &Vec<DnsRecord>,
                   results: &mut Vec<DnsPacket>,
                   resolver: &mut Box<DnsResolver>)
 {
     for ref rec in lookup_list {
         match *rec {
-            &ResourceRecord::CNAME { ref host, .. } => {
+            &DnsRecord::CNAME { ref host, .. } => {
                 if let Ok(result2) = resolver.resolve(host,
                                                       QueryType::A,
                                                       true) {
@@ -64,7 +64,7 @@ fn resolve_cnames(lookup_list: &Vec<ResourceRecord>,
                     resolve_cnames(&new_unmatched, results, resolver);
                 }
             },
-            &ResourceRecord::SRV { ref host, .. } => {
+            &DnsRecord::SRV { ref host, .. } => {
                 if let Ok(result2) = resolver.resolve(host,
                                                       QueryType::A,
                                                       true) {
@@ -188,7 +188,7 @@ impl DnsUdpServer {
 
             // Check for EDNS
             if request.resources.len() == 1 {
-                if let &ResourceRecord::OPT { packet_len, .. } = &request.resources[0] {
+                if let &DnsRecord::OPT { packet_len, .. } = &request.resources[0] {
                     size_limit = packet_len as usize;
                 }
             }
@@ -329,7 +329,7 @@ mod tests {
     use std::net::Ipv4Addr;
     use std::io::{Error, ErrorKind};
 
-    use dns::protocol::{DnsPacket, DnsQuestion, QueryType, ResourceRecord, ResultCode};
+    use dns::protocol::{DnsPacket, DnsQuestion, QueryType, DnsRecord, ResultCode};
 
     use super::*;
 
@@ -353,30 +353,30 @@ mod tests {
                 let mut packet = DnsPacket::new();
 
                 if qname == "google.com" {
-                    packet.answers.push(ResourceRecord::A {
+                    packet.answers.push(DnsRecord::A {
                         domain: "google.com".to_string(),
                         addr: "127.0.0.1".parse::<Ipv4Addr>().unwrap(),
                         ttl: 3600
                     });
                 } else if qname == "www.facebook.com" && qtype == QueryType::CNAME {
-                    packet.answers.push(ResourceRecord::CNAME {
+                    packet.answers.push(DnsRecord::CNAME {
                         domain: "www.facebook.com".to_string(),
                         host: "cdn.facebook.com".to_string(),
                         ttl: 3600
                     });
-                    packet.answers.push(ResourceRecord::A {
+                    packet.answers.push(DnsRecord::A {
                         domain: "cdn.facebook.com".to_string(),
                         addr: "127.0.0.1".parse::<Ipv4Addr>().unwrap(),
                         ttl: 3600
                     });
                 } else if qname == "www.microsoft.com" && qtype == QueryType::CNAME {
-                    packet.answers.push(ResourceRecord::CNAME {
+                    packet.answers.push(DnsRecord::CNAME {
                         domain: "www.microsoft.com".to_string(),
                         host: "cdn.microsoft.com".to_string(),
                         ttl: 3600
                     });
                 } else if qname == "cdn.microsoft.com" && qtype == QueryType::A {
-                    packet.answers.push(ResourceRecord::A {
+                    packet.answers.push(DnsRecord::A {
                         domain: "cdn.microsoft.com".to_string(),
                         addr: "127.0.0.1".parse::<Ipv4Addr>().unwrap(),
                         ttl: 3600
@@ -402,7 +402,7 @@ mod tests {
             assert_eq!(1, res.answers.len());
 
             match res.answers[0] {
-                ResourceRecord::A { ref domain, .. } => {
+                DnsRecord::A { ref domain, .. } => {
                     assert_eq!("google.com", domain);
                 },
                 _ => panic!()
@@ -416,14 +416,14 @@ mod tests {
             assert_eq!(2, res.answers.len());
 
             match res.answers[0] {
-                ResourceRecord::CNAME { ref domain, .. } => {
+                DnsRecord::CNAME { ref domain, .. } => {
                     assert_eq!("www.facebook.com", domain);
                 },
                 _ => panic!()
             }
 
             match res.answers[1] {
-                ResourceRecord::A { ref domain, .. } => {
+                DnsRecord::A { ref domain, .. } => {
                     assert_eq!("cdn.facebook.com", domain);
                 },
                 _ => panic!()
@@ -437,14 +437,14 @@ mod tests {
             assert_eq!(2, res.answers.len());
 
             match res.answers[0] {
-                ResourceRecord::CNAME { ref domain, .. } => {
+                DnsRecord::CNAME { ref domain, .. } => {
                     assert_eq!("www.microsoft.com", domain);
                 },
                 _ => panic!()
             }
 
             match res.answers[1] {
-                ResourceRecord::A { ref domain, .. } => {
+                DnsRecord::A { ref domain, .. } => {
                     assert_eq!("cdn.microsoft.com", domain);
                 },
                 _ => panic!()

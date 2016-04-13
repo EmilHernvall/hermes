@@ -7,7 +7,7 @@ use std::fs::File;
 use std::path::Path;
 
 use dns::buffer::{VectorPacketBuffer, PacketBuffer, StreamPacketBuffer};
-use dns::protocol::{DnsPacket,ResourceRecord,QueryType,ResultCode};
+use dns::protocol::{DnsPacket,DnsRecord,QueryType,ResultCode};
 
 #[derive(Clone,Debug)]
 pub struct Zone {
@@ -19,7 +19,7 @@ pub struct Zone {
     pub retry: u32,
     pub expire: u32,
     pub minimum: u32,
-    pub records: BTreeSet<ResourceRecord>
+    pub records: BTreeSet<DnsRecord>
 }
 
 impl Zone {
@@ -37,11 +37,11 @@ impl Zone {
         }
     }
 
-    pub fn add_record(&mut self, rec: &ResourceRecord) -> bool {
+    pub fn add_record(&mut self, rec: &DnsRecord) -> bool {
         self.records.insert(rec.clone())
     }
 
-    pub fn delete_record(&mut self, rec: &ResourceRecord) -> bool {
+    pub fn delete_record(&mut self, rec: &DnsRecord) -> bool {
         self.records.remove(rec)
     }
 }
@@ -86,7 +86,7 @@ impl<'a> Zones {
             let record_count = try!(buffer.read_u32());
 
             for _ in 0..record_count {
-                let rr = try!(ResourceRecord::read(&mut buffer));
+                let rr = try!(DnsRecord::read(&mut buffer));
                 zone.add_record(&rr);
             }
 
@@ -228,7 +228,7 @@ impl Authority {
         if packet.answers.len() == 0 {
             packet.header.rescode = ResultCode::NXDOMAIN;
 
-            packet.authorities.push(ResourceRecord::SOA {
+            packet.authorities.push(DnsRecord::SOA {
                 domain: zone.domain.clone(),
                 mname: zone.mname.clone(),
                 rname: zone.rname.clone(),

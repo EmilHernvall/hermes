@@ -9,6 +9,7 @@ use ascii::AsciiString;
 use rustc_serialize::json::{self, ToJson, Json};
 
 use dns::context::ServerContext;
+use dns::cache::RecordSet;
 
 use web::util::rr_to_json;
 use web::server::{Action,WebServer};
@@ -95,6 +96,7 @@ impl Action for CacheAction {
             records: Vec::new()
         };
 
+        let mut id = 0;
         for rs in cached_records {
             let mut cache_record = CacheRecord {
                 domain: rs.domain.clone(),
@@ -103,8 +105,17 @@ impl Action for CacheAction {
                 entries: Vec::new()
             };
 
-            for (id, entry) in rs.records.iter().enumerate() {
-                cache_record.entries.push(rr_to_json(id as u32, &entry.record));
+            for (_, ref entry) in &rs.record_types {
+
+                match *entry {
+                    &RecordSet::NoRecords { .. } => {},
+                    &RecordSet::Records { ref records, .. } => {
+                        for entry in records {
+                            cache_record.entries.push(rr_to_json(id, &entry.record));
+                            id += 1;
+                        }
+                    }
+                }
             }
 
             cache_response.records.push(cache_record);

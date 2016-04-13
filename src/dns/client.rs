@@ -90,7 +90,7 @@ impl DnsClient for DnsUdpClient {
                 let packet = match DnsPacket::from_buffer(&mut res_buffer) {
                     Ok(packet) => packet,
                     Err(err) => {
-                        println!("Got error {}", err);
+                        println!("DnsUdpClient failed to parse packet with error: {}", err);
                         continue;
                     }
                 };
