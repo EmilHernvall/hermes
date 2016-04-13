@@ -9,6 +9,8 @@ use std::sync::mpsc::{channel, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread::spawn;
 
+use chrono::*;
+
 use dns::buffer::{PacketBuffer, BytePacketBuffer};
 use dns::protocol::{DnsPacket, DnsQuestion, QueryType};
 
@@ -45,7 +47,8 @@ pub struct DnsUdpClient {
 /// was posed.
 struct PendingQuery {
     seq: u16,
-    tx: Sender<DnsPacket>
+    timestamp: DateTime<Local>,
+    tx: Sender<Option<DnsPacket>>
 }
 
 unsafe impl Send for DnsUdpClient {}
@@ -75,6 +78,7 @@ impl DnsClient for DnsUdpClient {
         let pending_queries_lock = self.pending_queries.clone();
 
         spawn(move || {
+            let timeout = Duration::seconds(10);
             loop {
                 // Read data into a buffer
                 let mut res_buffer = BytePacketBuffer::new();
@@ -99,24 +103,30 @@ impl DnsClient for DnsUdpClient {
                 // matching PendingQuery to which to deliver the response.
                 if let Ok(mut pending_queries) = pending_queries_lock.lock() {
 
-                    let mut matched_query = None;
+                    let mut finished_queries = Vec::new();
                     for (i, pending_query) in pending_queries.iter().enumerate() {
 
                         if pending_query.seq == packet.header.id {
 
                             // Matching query found, send the response
-                            let _ = pending_query.tx.send(packet.clone());
+                            let _ = pending_query.tx.send(Some(packet.clone()));
 
                             // Mark this index for removal from list
-                            matched_query = Some(i);
+                            finished_queries.push(i);
 
                             break;
+                        } else {
+                            let expires = pending_query.timestamp + timeout;
+                            if expires < Local::now() {
+                                let _ = pending_query.tx.send(None);
+                                finished_queries.push(i);
+                            }
                         }
                     }
 
-                    // Remove the `PendingQuery` for the list
-                    if let Some(idx) = matched_query {
-                        pending_queries.remove(idx);
+                    // Remove `PendingQuery` objects from the list, in reverse order
+                    for idx in finished_queries.iter().rev() {
+                        pending_queries.remove(*idx);
                     }
                 }
             }
@@ -161,6 +171,7 @@ impl DnsClient for DnsUdpClient {
             Ok(mut pending_queries) => {
                 pending_queries.push(PendingQuery {
                     seq: packet.header.id,
+                    timestamp: Local::now(),
                     tx: tx
                 });
             },
@@ -173,8 +184,11 @@ impl DnsClient for DnsUdpClient {
         try!(self.socket.send_to(&req_buffer.buf[0..req_buffer.pos], server));
 
         // Wait for response
-        if let Ok(qr) = rx.recv() {
-            return Ok(qr);
+        if let Ok(res) = rx.recv() {
+            match res {
+                Some(qr) => return Ok(qr),
+                None => return Err(Error::new(ErrorKind::TimedOut, "Request timed out"))
+            }
         }
 
         // Otherwise, fail

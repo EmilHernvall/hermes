@@ -797,7 +797,7 @@ impl DnsPacket {
         let mut new_authorities = Vec::new();
         for auth in &self.authorities {
             if let DnsRecord::NS { ref domain, ref host, .. } = *auth {
-                if !qname.to_lowercase().ends_with(&domain.to_lowercase()) {
+                if !qname.ends_with(domain) {
                     continue;
                 }
 
@@ -834,7 +834,7 @@ impl DnsPacket {
         let mut new_authorities = Vec::new();
         for auth in &self.authorities {
             if let DnsRecord::NS { ref domain, ref host, .. } = *auth {
-                if !qname.to_lowercase().ends_with(&domain.to_lowercase()) {
+                if !qname.ends_with(domain) {
                     continue;
                 }
 

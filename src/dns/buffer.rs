@@ -136,7 +136,10 @@ pub trait PacketBuffer {
             }
 
             outstr.push_str(delim);
-            outstr.push_str(&String::from_utf8_lossy(try!(self.get_range(pos, len as usize))));
+
+            let str_buffer = try!(self.get_range(pos, len as usize));
+            outstr.push_str(&String::from_utf8_lossy(str_buffer).to_lowercase());
+
             delim = ".";
 
             pos += len as usize;
