@@ -20,7 +20,7 @@ use getopts::Options;
 
 use dns::server::{DnsServer,DnsUdpServer,DnsTcpServer};
 use dns::protocol::DnsRecord;
-use dns::context::ServerContext;
+use dns::context::{ServerContext, ResolveStrategy};
 use web::server::WebServer;
 use web::cache::CacheAction;
 use web::authority::{AuthorityAction,ZoneAction};
@@ -59,7 +59,10 @@ fn main() {
         if opt_matches.opt_present("f") {
             match opt_matches.opt_str("f").and_then(|x| x.parse::<Ipv4Addr>().ok()) {
                 Some(ip) => {
-                    ctx.forward_server = Some((ip.to_string(), 53));
+                    ctx.resolve_strategy = ResolveStrategy::Forward {
+                        host: ip.to_string(),
+                        port: 53
+                    };
                     index_rootservers = false;
                     println!("Running as forwarder");
                 },

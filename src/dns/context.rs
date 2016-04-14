@@ -24,13 +24,21 @@ impl ServerStatistics {
     }
 }
 
+pub enum ResolveStrategy {
+    Recursive,
+    Forward {
+        host: String,
+        port: u16
+    }
+}
+
 pub struct ServerContext {
     pub authority: Authority,
     pub cache: SynchronizedCache,
     pub client: Box<DnsClient + Sync + Send>,
     pub dns_port: u16,
     pub api_port: u16,
-    pub forward_server: Option<(String, u16)>,
+    pub resolve_strategy: ResolveStrategy,
     pub allow_recursive: bool,
     pub enable_udp: bool,
     pub enable_tcp: bool,
@@ -46,7 +54,7 @@ impl ServerContext {
             client: Box::new(DnsUdpClient::new()),
             dns_port: 53,
             api_port: 5380,
-            forward_server: None,
+            resolve_strategy: ResolveStrategy::Recursive,
             allow_recursive: true,
             enable_udp: true,
             enable_tcp: true,
@@ -69,10 +77,11 @@ impl ServerContext {
     }
 
     pub fn create_resolver(&self, ptr: Arc<ServerContext>) -> Box<DnsResolver> {
-        if self.forward_server.is_some() {
-            Box::new(ForwardingDnsResolver::new(ptr))
-        } else {
-            Box::new(RecursiveDnsResolver::new(ptr))
+        match self.resolve_strategy {
+            ResolveStrategy::Recursive => Box::new(RecursiveDnsResolver::new(ptr)),
+            ResolveStrategy::Forward { ref host, port } => {
+                Box::new(ForwardingDnsResolver::new(ptr, (host.clone(), port)))
+            }
         }
     }
 }

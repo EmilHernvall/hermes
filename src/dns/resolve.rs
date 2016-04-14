@@ -41,6 +41,12 @@ pub trait DnsResolver {
             return Ok(qr);
         }
 
+        if qtype == QueryType::A || qtype == QueryType::AAAA {
+            if let Some(qr) = context.cache.lookup(qname, QueryType::CNAME) {
+                return Ok(qr);
+            }
+        }
+
         self.perform(qname, qtype)
     }
 
@@ -51,13 +57,15 @@ pub trait DnsResolver {
 ///
 /// This resolver uses an external DNS server to service a query
 pub struct ForwardingDnsResolver {
-    context: Arc<ServerContext>
+    context: Arc<ServerContext>,
+    server: (String, u16)
 }
 
 impl ForwardingDnsResolver {
-    pub fn new(context: Arc<ServerContext>) -> ForwardingDnsResolver {
+    pub fn new(context: Arc<ServerContext>, server: (String, u16)) -> ForwardingDnsResolver {
         ForwardingDnsResolver {
-            context: context
+            context: context,
+            server: server
         }
     }
 }
@@ -71,21 +79,17 @@ impl DnsResolver for ForwardingDnsResolver {
                qname: &String,
                qtype: QueryType) -> Result<DnsPacket> {
 
-        if let Some(ref server) = self.context.forward_server {
-            let &(ref host, port) = server;
-            let result = self.context.client.send_query(qname,
-                                                        qtype.clone(),
-                                                        (host.as_str(), port),
-                                                        true);
+        let &(ref host, port) = &self.server;
+        let result = self.context.client.send_query(qname,
+                                                    qtype.clone(),
+                                                    (host.as_str(), port),
+                                                    true);
 
-            if let Ok(ref qr) = result {
-                let _ = self.context.cache.store(&qr.answers);
-            }
-
-            return result;
+        if let Ok(ref qr) = result {
+            let _ = self.context.cache.store(&qr.answers);
         }
 
-        Err(Error::new(ErrorKind::NotFound, "No DNS server found"))
+        return result;
     }
 }
 
