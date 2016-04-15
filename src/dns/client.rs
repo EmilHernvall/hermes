@@ -61,16 +61,15 @@ unsafe impl Send for DnsUdpClient {}
 unsafe impl Sync for DnsUdpClient {}
 
 impl DnsUdpClient {
-    pub fn new() -> DnsUdpClient {
+    pub fn new(port: u16) -> DnsUdpClient {
         DnsUdpClient {
             total_sent: AtomicUsize::new(0),
             total_failed: AtomicUsize::new(0),
             seq: AtomicUsize::new(0),
-            socket: UdpSocket::bind(("0.0.0.0", 34255)).unwrap(),
+            socket: UdpSocket::bind(("0.0.0.0", port)).unwrap(),
             pending_queries: Arc::new(Mutex::new(Vec::new()))
         }
     }
-
 }
 
 impl DnsClient for DnsUdpClient {

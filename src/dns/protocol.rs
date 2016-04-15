@@ -64,7 +64,7 @@ impl QueryType {
 ///
 /// This enumeration is used for reading as well as writing records, from network
 /// and from disk (for storage of authority data).
-#[derive(Debug,Clone,PartialEq,Eq,Hash,PartialOrd,Ord)]
+#[derive(Debug,Clone,Eq,Hash,PartialOrd,Ord)]
 #[allow(dead_code)]
 pub enum DnsRecord {
     UNKNOWN {
@@ -128,6 +128,59 @@ pub enum DnsRecord {
         flags: u32,
         data: String
     } // 41
+}
+
+impl PartialEq<DnsRecord> for DnsRecord {
+    fn eq(&self, other: &DnsRecord) -> bool {
+        match (self, other) {
+            (&DnsRecord::UNKNOWN {..},
+             &DnsRecord::UNKNOWN {..}) => {
+
+                false
+            },
+            (&DnsRecord::A { domain: ref domain1, addr: ref addr1, .. },
+             &DnsRecord::A { domain: ref domain2, addr: ref addr2, .. }) => {
+
+                domain1 == domain2 && addr1 == addr2
+            },
+            (&DnsRecord::NS { domain: ref domain1, host: ref host1, .. },
+             &DnsRecord::NS { domain: ref domain2, host: ref host2, .. }) => {
+
+                domain1 == domain2 && host1 == host2
+            },
+            (&DnsRecord::CNAME { domain: ref domain1, host: ref host1, .. },
+             &DnsRecord::CNAME { domain: ref domain2, host: ref host2, .. }) => {
+
+                domain1 == domain2 && host1 == host2
+            },
+            (&DnsRecord::SOA { domain: ref domain1, mname: ref mname1, rname: ref rname1, serial: serial1, .. },
+             &DnsRecord::SOA { domain: ref domain2, mname: ref mname2, rname: ref rname2, serial: serial2, .. }) => {
+
+                domain1 == domain2 && mname1 == mname2 && rname1 == rname2 && serial1 == serial2
+            },
+            (&DnsRecord::MX { domain: ref domain1, priority: priority1, host: ref host1, .. },
+             &DnsRecord::MX { domain: ref domain2, priority: priority2, host: ref host2, .. }) => {
+
+                domain1 == domain2 && priority1 == priority2 && host1 == host2
+            },
+            (&DnsRecord::TXT { domain: ref domain1, data: ref data1, .. },
+             &DnsRecord::TXT { domain: ref domain2, data: ref data2, .. }) => {
+
+                domain1 == domain2 && data1 == data2
+            },
+            (&DnsRecord::AAAA { domain: ref domain1, addr: ref addr1, .. },
+             &DnsRecord::AAAA { domain: ref domain2, addr: ref addr2, .. }) => {
+
+                domain1 == domain2 && addr1 == addr2
+            },
+            (&DnsRecord::SRV { domain: ref domain1, priority: priority1, weight: weight1, port: port1, host: ref host1, .. },
+             &DnsRecord::SRV { domain: ref domain2, priority: priority2, weight: weight2, port: port2, host: ref host2, .. }) => {
+
+                domain1 == domain2 && priority1 == priority2 && weight1 == weight2 && port1 == port2 && host1 == host2
+            },
+            _ => false
+        }
+    }
 }
 
 impl DnsRecord {

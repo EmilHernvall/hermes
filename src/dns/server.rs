@@ -1,10 +1,13 @@
 //! UDP and TCP server implementations for DNS
 
-use std::io::{Result, Write};
+use std::io::Write;
 use std::net::{UdpSocket, TcpListener, TcpStream, Shutdown};
 use std::sync::Arc;
+use std::sync::mpsc::{channel, Sender};
 use std::thread::spawn;
 use std::sync::atomic::Ordering;
+use std::net::SocketAddr;
+use rand::random;
 
 use dns::resolve::DnsResolver;
 use dns::protocol::{DnsPacket, QueryType, DnsRecord, ResultCode};
@@ -154,60 +157,18 @@ pub fn execute_query(context: Arc<ServerContext>, request: &DnsPacket) -> DnsPac
 /// how to service the request. Packets are read on a single thread, after which
 /// a new thread is spawned to service the request asynchronously.
 pub struct DnsUdpServer {
-    context: Arc<ServerContext>
+    context: Arc<ServerContext>,
+    senders: Vec<Sender<(SocketAddr, DnsPacket)>>,
+    thread_count: usize
 }
 
 impl DnsUdpServer {
-    pub fn new(context: Arc<ServerContext>) -> DnsUdpServer {
+    pub fn new(context: Arc<ServerContext>, thread_count: usize) -> DnsUdpServer {
         DnsUdpServer {
-            context: context
+            context: context,
+            senders: Vec::new(),
+            thread_count: thread_count
         }
-    }
-
-    /// Handle a request asynchronously by reading it on the query thread but
-    /// servicing the response on a new thread
-    fn handle_request(&self, socket: &UdpSocket) -> Result<()> {
-
-        // Read a query packet
-        let mut req_buffer = BytePacketBuffer::new();
-        let (_, src) = try!(socket.recv_from(&mut req_buffer.buf));
-        let request = try!(DnsPacket::from_buffer(&mut req_buffer));
-
-        // Clone the socket and context so they can be safely moved to the new
-        // thread
-        let socket_clone = match socket.try_clone() {
-            Ok(x) => x,
-            Err(e) => return Err(e)
-        };
-
-        let context = self.context.clone();
-
-        // Spawn the response thread
-        spawn(move || {
-
-            let mut size_limit = 512;
-
-            // Check for EDNS
-            if request.resources.len() == 1 {
-                if let &DnsRecord::OPT { packet_len, .. } = &request.resources[0] {
-                    size_limit = packet_len as usize;
-                }
-            }
-
-            // Create a response buffer, and ask the context for an appropriate
-            // resolver
-            let mut res_buffer = VectorPacketBuffer::new();
-
-            let mut packet = execute_query(context, &request);
-            let _ = packet.write(&mut res_buffer, size_limit);
-
-            // Fire off the response
-            let len = res_buffer.pos();
-            let data = return_or_report!(res_buffer.get_range(0, len), "Failed to get buffer data");
-            ignore_or_report!(socket_clone.send_to(data, src), "Failed to send response packet");
-        });
-
-        Ok(())
     }
 }
 
@@ -217,7 +178,7 @@ impl DnsServer for DnsUdpServer {
     ///
     /// This method takes ownership of the server, preventing the method from
     /// being called multiple times.
-    fn run_server(self) -> bool {
+    fn run_server(mut self) -> bool {
 
         // Bind the socket
         let socket = match UdpSocket::bind(("0.0.0.0", self.context.dns_port)) {
@@ -228,14 +189,82 @@ impl DnsServer for DnsUdpServer {
             }
         };
 
+        // Spawn threads for handling requests, and create the channels
+        for _ in 0..self.thread_count {
+            let (tx, rx) = channel();
+            self.senders.push(tx);
+
+            let socket_clone = match socket.try_clone() {
+                Ok(x) => x,
+                Err(e) => {
+                    println!("Failed to clone socket when starting UDP server: {:?}", e);
+                    continue
+                }
+            };
+
+            let context = self.context.clone();
+
+            spawn(move || {
+                loop {
+                    let (src, request) = match rx.recv() {
+                        Ok(x) => x,
+                        Err(_) => continue
+                    };
+
+                    let mut size_limit = 512;
+
+                    // Check for EDNS
+                    if request.resources.len() == 1 {
+                        if let &DnsRecord::OPT { packet_len, .. } = &request.resources[0] {
+                            size_limit = packet_len as usize;
+                        }
+                    }
+
+                    // Create a response buffer, and ask the context for an appropriate
+                    // resolver
+                    let mut res_buffer = VectorPacketBuffer::new();
+
+                    let mut packet = execute_query(context.clone(), &request);
+                    let _ = packet.write(&mut res_buffer, size_limit);
+
+                    // Fire off the response
+                    let len = res_buffer.pos();
+                    let data = return_or_report!(res_buffer.get_range(0, len), "Failed to get buffer data");
+                    ignore_or_report!(socket_clone.send_to(data, src), "Failed to send response packet");
+                }
+            });
+        }
+
         // Start servicing requests
         spawn(move || {
             loop {
                 let _ = self.context.statistics.udp_query_count.fetch_add(1, Ordering::Release);
-                match self.handle_request(&socket) {
+
+                // Read a query packet
+                let mut req_buffer = BytePacketBuffer::new();
+                let (_, src) = match socket.recv_from(&mut req_buffer.buf) {
+                    Ok(x) => x,
+                    Err(e) => {
+                        println!("Failed to read from UDP socket: {:?}", e);
+                        continue;
+                    }
+                };
+
+                // Parse it
+                let request = match DnsPacket::from_buffer(&mut req_buffer) {
+                    Ok(x) => x,
+                    Err(e) => {
+                        println!("Failed to parse UDP query packet: {:?}", e);
+                        continue;
+                    }
+                };
+
+                // Hand it off to a worker thread
+                let thread_no = random::<usize>() % self.thread_count;
+                match self.senders[thread_no].send((src, request)) {
                     Ok(_) => {},
-                    Err(err) => {
-                        println!("UDP request failed: {:?}", err);
+                    Err(e) => {
+                        println!("Failed to send UDP request for processing on thread {}: {}", thread_no, e);
                     }
                 }
             }
@@ -247,66 +276,84 @@ impl DnsServer for DnsUdpServer {
 
 /// TCP DNS server
 pub struct DnsTcpServer {
-    context: Arc<ServerContext>
+    context: Arc<ServerContext>,
+    senders: Vec<Sender<TcpStream>>,
+    thread_count: usize
 }
 
 impl DnsTcpServer {
-    pub fn new(context: Arc<ServerContext>) -> DnsTcpServer {
+    pub fn new(context: Arc<ServerContext>, thread_count: usize) -> DnsTcpServer {
         DnsTcpServer {
-            context: context
+            context: context,
+            senders: Vec::new(),
+            thread_count: thread_count
         }
-    }
-
-    fn handle_request(&self, mut stream: TcpStream) {
-
-        let context = self.context.clone();
-
-        spawn(move || {
-            let request = {
-                let mut stream_buffer = StreamPacketBuffer::new(&mut stream);
-
-                // When DNS packets are sent over TCP, they're prefixed with a two byte
-                // length. We don't really need to know the length in advance, so we
-                // just move past it and continue reading as usual
-                ignore_or_report!(stream_buffer.read_u16(), "Failed to read query packet length");
-
-                return_or_report!(DnsPacket::from_buffer(&mut stream_buffer), "Failed to read query packet")
-            };
-
-            let mut res_buffer = VectorPacketBuffer::new();
-
-            let mut packet = execute_query(context, &request);
-            ignore_or_report!(packet.write(&mut res_buffer, 0xFFFF), "Failed to write packet to buffer");
-
-            // As is the case for incoming queries, we need to send a 2 byte length
-            // value before handing of the actual packet.
-            let len = res_buffer.pos();
-
-            let mut len_buffer = [0; 2];
-            len_buffer[0] = (len >> 8) as u8;
-            len_buffer[1] = (len & 0xFF) as u8;
-
-            ignore_or_report!(stream.write(&len_buffer), "Failed to write packet size");
-
-            // Now we can go ahead and write the actual packet
-            let data = return_or_report!(res_buffer.get_range(0, len), "Failed to get packet data");
-
-            ignore_or_report!(stream.write(data), "Failed to write response packet");
-
-            ignore_or_report!(stream.shutdown(Shutdown::Both), "Failed to shutdown socket");
-        });
     }
 }
 
 impl DnsServer for DnsTcpServer {
-    fn run_server(self) -> bool {
-        let socket_attempt = TcpListener::bind(("0.0.0.0", self.context.dns_port));
-        if !socket_attempt.is_ok() {
-            return false;
+    fn run_server(mut self) -> bool {
+        let socket = match TcpListener::bind(("0.0.0.0", self.context.dns_port)) {
+            Ok(x) => x,
+            Err(e) => {
+                println!("Failed to bind TCP socket on port {}: {:?}", self.context.dns_port, e);
+                return false;
+            }
+        };
+
+        // Spawn threads for handling requests, and create the channels
+        for _ in 0..self.thread_count {
+            let (tx, rx) = channel();
+            self.senders.push(tx);
+
+            let context = self.context.clone();
+
+            spawn(move || {
+                loop {
+                    let mut stream = match rx.recv() {
+                        Ok(x) => x,
+                        Err(_) => continue
+                    };
+
+                    let _ = context.statistics.tcp_query_count.fetch_add(1, Ordering::Release);
+
+                    let request = {
+                        let mut stream_buffer = StreamPacketBuffer::new(&mut stream);
+
+                        // When DNS packets are sent over TCP, they're prefixed with a two byte
+                        // length. We don't really need to know the length in advance, so we
+                        // just move past it and continue reading as usual
+                        ignore_or_report!(stream_buffer.read_u16(), "Failed to read query packet length");
+
+                        return_or_report!(DnsPacket::from_buffer(&mut stream_buffer), "Failed to read query packet")
+                    };
+
+                    let mut res_buffer = VectorPacketBuffer::new();
+
+                    let mut packet = execute_query(context.clone(), &request);
+                    ignore_or_report!(packet.write(&mut res_buffer, 0xFFFF), "Failed to write packet to buffer");
+
+                    // As is the case for incoming queries, we need to send a 2 byte length
+                    // value before handing of the actual packet.
+                    let len = res_buffer.pos();
+
+                    let mut len_buffer = [0; 2];
+                    len_buffer[0] = (len >> 8) as u8;
+                    len_buffer[1] = (len & 0xFF) as u8;
+
+                    ignore_or_report!(stream.write(&len_buffer), "Failed to write packet size");
+
+                    // Now we can go ahead and write the actual packet
+                    let data = return_or_report!(res_buffer.get_range(0, len), "Failed to get packet data");
+
+                    ignore_or_report!(stream.write(data), "Failed to write response packet");
+
+                    ignore_or_report!(stream.shutdown(Shutdown::Both), "Failed to shutdown socket");
+                }
+            });
         }
 
         spawn(move || {
-            let socket = socket_attempt.unwrap();
             for wrap_stream in socket.incoming() {
                 let stream = match wrap_stream {
                     Ok(stream) => stream,
@@ -316,8 +363,14 @@ impl DnsServer for DnsTcpServer {
                     }
                 };
 
-                let _ = self.context.statistics.tcp_query_count.fetch_add(1, Ordering::Release);
-                self.handle_request(stream);
+                // Hand it off to a worker thread
+                let thread_no = random::<usize>() % self.thread_count;
+                match self.senders[thread_no].send(stream) {
+                    Ok(_) => {},
+                    Err(e) => {
+                        println!("Failed to send TCP request for processing on thread {}: {}", thread_no, e);
+                    }
+                }
             }
         });
 
@@ -336,6 +389,7 @@ mod tests {
 
     use super::*;
 
+    use dns::context::ResolveStrategy;
     use dns::context::tests::create_test_context;
 
     fn build_query(qname: &str, qtype: QueryType) -> DnsPacket {
@@ -393,7 +447,10 @@ mod tests {
 
         match Arc::get_mut(&mut context) {
             Some(mut ctx) => {
-                ctx.forward_server = Some(("127.0.0.1".to_string(), 53));
+                ctx.resolve_strategy = ResolveStrategy::Forward {
+                        host: "127.0.0.1".to_string(),
+                        port: 53
+                    };
             },
             None => panic!()
         }
@@ -496,7 +553,10 @@ mod tests {
 
         match Arc::get_mut(&mut context2) {
             Some(mut ctx) => {
-                ctx.forward_server = Some(("127.0.0.1".to_string(), 53));
+                ctx.resolve_strategy = ResolveStrategy::Forward {
+                        host: "127.0.0.1".to_string(),
+                        port: 53
+                    };
             },
             None => panic!()
         }

@@ -123,7 +123,7 @@ impl DnsResolver for RecursiveDnsResolver {
 
         let labels = qname.split('.').collect::<Vec<&str>>();
         for lbl_idx in 0..labels.len()+1 {
-            let domain = labels[lbl_idx..labels.len()].join(".");
+            let domain = labels[lbl_idx..].join(".");
 
             match self.context.cache
                 .lookup(&domain, QueryType::NS)
@@ -216,6 +216,7 @@ mod tests {
 
     use super::*;
 
+    use dns::context::ResolveStrategy;
     use dns::context::tests::create_test_context;
 
     #[test]
@@ -239,7 +240,10 @@ mod tests {
 
         match Arc::get_mut(&mut context) {
             Some(mut ctx) => {
-                ctx.forward_server = Some(("127.0.0.1".to_string(), 53));
+                ctx.resolve_strategy = ResolveStrategy::Forward {
+                        host: "127.0.0.1".to_string(),
+                        port: 53
+                    };
             },
             None => panic!()
         }
