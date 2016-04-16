@@ -51,9 +51,9 @@ impl ServerContext {
         ServerContext {
             authority: Authority::new(),
             cache: SynchronizedCache::new(),
-            client: Box::new(DnsUdpClient::new(34256)),
-            dns_port: 1053,
-            api_port: 5381,
+            client: Box::new(DnsUdpClient::new(34255)),
+            dns_port: 53,
+            api_port: 5380,
             resolve_strategy: ResolveStrategy::Recursive,
             allow_recursive: true,
             enable_udp: true,

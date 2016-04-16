@@ -2,11 +2,13 @@
 
 use std::io::Write;
 use std::net::{UdpSocket, TcpListener, TcpStream, Shutdown};
-use std::sync::Arc;
+use std::sync::{Arc,Mutex,Condvar};
 use std::sync::mpsc::{channel, Sender};
 use std::thread::spawn;
 use std::sync::atomic::Ordering;
 use std::net::SocketAddr;
+use std::collections::LinkedList;
+
 use rand::random;
 
 use dns::resolve::DnsResolver;
@@ -53,8 +55,13 @@ pub trait DnsServer {
 /// lookups.
 fn resolve_cnames(lookup_list: &Vec<DnsRecord>,
                   results: &mut Vec<DnsPacket>,
-                  resolver: &mut Box<DnsResolver>)
+                  resolver: &mut Box<DnsResolver>,
+                  depth: u16)
 {
+    if depth > 10 {
+        return;
+    }
+
     for ref rec in lookup_list {
         match *rec {
             &DnsRecord::CNAME { ref host, .. } => {
@@ -65,7 +72,7 @@ fn resolve_cnames(lookup_list: &Vec<DnsRecord>,
                     let new_unmatched = result2.get_unresolved_cnames();
                     results.push(result2);
 
-                    resolve_cnames(&new_unmatched, results, resolver);
+                    resolve_cnames(&new_unmatched, results, resolver, depth+1);
                 }
             },
             &DnsRecord::SRV { ref host, .. } => {
@@ -76,7 +83,7 @@ fn resolve_cnames(lookup_list: &Vec<DnsRecord>,
                     let new_unmatched = result2.get_unresolved_cnames();
                     results.push(result2);
 
-                    resolve_cnames(&new_unmatched, results, resolver);
+                    resolve_cnames(&new_unmatched, results, resolver, depth+1);
                 }
             },
             _ => {}
@@ -123,7 +130,7 @@ pub fn execute_query(context: Arc<ServerContext>, request: &DnsPacket) -> DnsPac
                 let unmatched = result.get_unresolved_cnames();
                 results.push(result);
 
-                resolve_cnames(&unmatched, &mut results, &mut resolver);
+                resolve_cnames(&unmatched, &mut results, &mut resolver, 0);
 
                 rescode
             },
@@ -158,7 +165,8 @@ pub fn execute_query(context: Arc<ServerContext>, request: &DnsPacket) -> DnsPac
 /// a new thread is spawned to service the request asynchronously.
 pub struct DnsUdpServer {
     context: Arc<ServerContext>,
-    senders: Vec<Sender<(SocketAddr, DnsPacket)>>,
+    request_queue: Arc<Mutex<LinkedList<(SocketAddr, DnsPacket)>>>,
+    request_cond: Arc<Condvar>,
     thread_count: usize
 }
 
@@ -166,7 +174,8 @@ impl DnsUdpServer {
     pub fn new(context: Arc<ServerContext>, thread_count: usize) -> DnsUdpServer {
         DnsUdpServer {
             context: context,
-            senders: Vec::new(),
+            request_queue: Arc::new(Mutex::new(LinkedList::new())),
+            request_cond: Arc::new(Condvar::new()),
             thread_count: thread_count
         }
     }
@@ -189,11 +198,8 @@ impl DnsServer for DnsUdpServer {
             }
         };
 
-        // Spawn threads for handling requests, and create the channels
-        for _ in 0..self.thread_count {
-            let (tx, rx) = channel();
-            self.senders.push(tx);
-
+        // Spawn threads for handling requests
+        for thread_no in 0..self.thread_count {
             let socket_clone = match socket.try_clone() {
                 Ok(x) => x,
                 Err(e) => {
@@ -203,12 +209,23 @@ impl DnsServer for DnsUdpServer {
             };
 
             let context = self.context.clone();
+            let request_cond = self.request_cond.clone();
+            let request_queue = self.request_queue.clone();
 
             spawn(move || {
                 loop {
-                    let (src, request) = match rx.recv() {
-                        Ok(x) => x,
-                        Err(_) => continue
+
+                    // Acquire lock, and wait on the condition until data is
+                    // available. Then proceed with popping an entry of the queue.
+                    let (src, request) = match request_queue.lock().ok()
+                        .and_then(|x| request_cond.wait(x).ok())
+                        .and_then(|mut x| x.pop_front()) {
+
+                        Some(x) => x,
+                        None => {
+                            println!("Not expected to happen!");
+                            continue;
+                        }
                     };
 
                     let mut size_limit = 512;
@@ -259,12 +276,15 @@ impl DnsServer for DnsUdpServer {
                     }
                 };
 
-                // Hand it off to a worker thread
-                let thread_no = random::<usize>() % self.thread_count;
-                match self.senders[thread_no].send((src, request)) {
-                    Ok(_) => {},
+                // Acquire lock, add request to queue, and notify waiting threads
+                // using the condition.
+                match self.request_queue.lock() {
+                    Ok(mut queue) => {
+                        queue.push_back((src, request));
+                        self.request_cond.notify_one();
+                    },
                     Err(e) => {
-                        println!("Failed to send UDP request for processing on thread {}: {}", thread_no, e);
+                        println!("Failed to send UDP request for processing: {}", e);
                     }
                 }
             }
