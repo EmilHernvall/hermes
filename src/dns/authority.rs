@@ -7,13 +7,13 @@ use std::fs::File;
 use std::path::Path;
 
 use dns::buffer::{VectorPacketBuffer, PacketBuffer, StreamPacketBuffer};
-use dns::protocol::{DnsPacket,DnsRecord,QueryType,ResultCode};
+use dns::protocol::{DnsPacket,DnsRecord,QueryType,ResultCode,TransientTtl};
 
-#[derive(Clone,Debug)]
+#[derive(Clone,Debug,Default)]
 pub struct Zone {
     pub domain: String,
-    pub mname: String,
-    pub rname: String,
+    pub m_name: String,
+    pub r_name: String,
     pub serial: u32,
     pub refresh: u32,
     pub retry: u32,
@@ -23,11 +23,11 @@ pub struct Zone {
 }
 
 impl Zone {
-    pub fn new(domain: String, mname: String, rname: String) -> Zone {
+    pub fn new(domain: String, m_name: String, r_name: String) -> Zone {
         Zone {
             domain: domain,
-            mname: mname,
-            rname: rname,
+            m_name: m_name,
+            r_name: r_name,
             serial: 0,
             refresh: 0,
             retry: 0,
@@ -46,6 +46,7 @@ impl Zone {
     }
 }
 
+#[derive(Default)]
 pub struct Zones {
     zones: BTreeMap<String, Zone>
 }
@@ -75,8 +76,8 @@ impl<'a> Zones {
 
             let mut zone = Zone::new(String::new(), String::new(), String::new());
             try!(buffer.read_qname(&mut zone.domain));
-            try!(buffer.read_qname(&mut zone.mname));
-            try!(buffer.read_qname(&mut zone.rname));
+            try!(buffer.read_qname(&mut zone.m_name));
+            try!(buffer.read_qname(&mut zone.r_name));
             zone.serial = try!(buffer.read_u32());
             zone.refresh = try!(buffer.read_u32());
             zone.retry = try!(buffer.read_u32());
@@ -100,7 +101,7 @@ impl<'a> Zones {
 
     pub fn save(&mut self) -> Result<()> {
         let zones_dir = Path::new("zones");
-        for (_, zone) in &self.zones {
+        for zone in self.zones.values() {
             let filename = zones_dir.join(Path::new(&zone.domain));
             let mut zone_file = match File::create(&filename) {
                 Ok(x) => x,
@@ -112,8 +113,8 @@ impl<'a> Zones {
 
             let mut buffer = VectorPacketBuffer::new();
             let _ = buffer.write_qname(&zone.domain);
-            let _ = buffer.write_qname(&zone.mname);
-            let _ = buffer.write_qname(&zone.rname);
+            let _ = buffer.write_qname(&zone.m_name);
+            let _ = buffer.write_qname(&zone.r_name);
             let _ = buffer.write_u32(zone.serial);
             let _ = buffer.write_u32(zone.refresh);
             let _ = buffer.write_u32(zone.retry);
@@ -133,7 +134,7 @@ impl<'a> Zones {
 
     pub fn zones(&self) -> Vec<&Zone>
     {
-        self.zones.values().map(|x| x).collect()
+        self.zones.values().collect()
     }
 
     pub fn add_zone(&mut self, zone: Zone)
@@ -152,6 +153,7 @@ impl<'a> Zones {
     }
 }
 
+#[derive(Default)]
 pub struct Authority {
     zones: RwLock<Zones>
 }
@@ -175,7 +177,7 @@ impl Authority {
         Ok(())
     }
 
-    pub fn query(&self, qname: &String, qtype: QueryType) -> Option<DnsPacket>
+    pub fn query(&self, qname: &str, qtype: &QueryType) -> Option<DnsPacket>
     {
         let zones = match self.zones.read().ok() {
             Some(x) => x,
@@ -217,7 +219,7 @@ impl Authority {
             }
 
             let rtype = rec.get_querytype();
-            if qtype == rtype || (qtype == QueryType::A &&
+            if *qtype == rtype || (*qtype == QueryType::A &&
                                   rtype == QueryType::CNAME) {
 
                 packet.answers.push(rec.clone());
@@ -225,19 +227,19 @@ impl Authority {
 
         }
 
-        if packet.answers.len() == 0 {
+        if packet.answers.is_empty() {
             packet.header.rescode = ResultCode::NXDOMAIN;
 
             packet.authorities.push(DnsRecord::SOA {
                 domain: zone.domain.clone(),
-                mname: zone.mname.clone(),
-                rname: zone.rname.clone(),
+                m_name: zone.m_name.clone(),
+                r_name: zone.r_name.clone(),
                 serial: zone.serial,
                 refresh: zone.refresh,
                 retry: zone.retry,
                 expire: zone.expire,
                 minimum: zone.minimum,
-                ttl: zone.minimum
+                ttl: TransientTtl(zone.minimum)
             });
         }
 

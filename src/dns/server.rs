@@ -7,7 +7,7 @@ use std::sync::mpsc::{channel, Sender};
 use std::thread::spawn;
 use std::sync::atomic::Ordering;
 use std::net::SocketAddr;
-use std::collections::LinkedList;
+use std::collections::VecDeque;
 
 use rand::random;
 
@@ -53,7 +53,7 @@ pub trait DnsServer {
 /// Utility function for resolving domains referenced in for example CNAME or SRV
 /// records. This usually spares the client from having to perform additional
 /// lookups.
-fn resolve_cnames(lookup_list: &Vec<DnsRecord>,
+fn resolve_cnames(lookup_list: &[DnsRecord],
                   results: &mut Vec<DnsPacket>,
                   resolver: &mut Box<DnsResolver>,
                   depth: u16)
@@ -63,21 +63,11 @@ fn resolve_cnames(lookup_list: &Vec<DnsRecord>,
     }
 
     for ref rec in lookup_list {
-        match *rec {
-            &DnsRecord::CNAME { ref host, .. } => {
+        match **rec {
+            DnsRecord::CNAME { ref host, .. } |
+            DnsRecord::SRV { ref host, .. } => {
                 if let Ok(result2) = resolver.resolve(host,
-                                                      QueryType::A,
-                                                      true) {
-
-                    let new_unmatched = result2.get_unresolved_cnames();
-                    results.push(result2);
-
-                    resolve_cnames(&new_unmatched, results, resolver, depth+1);
-                }
-            },
-            &DnsRecord::SRV { ref host, .. } => {
-                if let Ok(result2) = resolver.resolve(host,
-                                                      QueryType::A,
+                                                      &QueryType::A,
                                                       true) {
 
                     let new_unmatched = result2.get_unresolved_cnames();
@@ -110,7 +100,7 @@ pub fn execute_query(context: Arc<ServerContext>, request: &DnsPacket) -> DnsPac
     if request.header.recursion_desired && !context.allow_recursive {
         packet.header.rescode = ResultCode::REFUSED;
     }
-    else if request.questions.len() == 0 {
+    else if request.questions.is_empty() {
         packet.header.rescode = ResultCode::FORMERR;
     }
     else {
@@ -121,7 +111,7 @@ pub fn execute_query(context: Arc<ServerContext>, request: &DnsPacket) -> DnsPac
 
         let mut resolver = context.create_resolver(context.clone());
         let rescode = match resolver.resolve(&question.name,
-                                             question.qtype.clone(),
+                                             &question.qtype,
                                              request.header.recursion_desired) {
 
             Ok(result) => {
@@ -160,12 +150,12 @@ pub fn execute_query(context: Arc<ServerContext>, request: &DnsPacket) -> DnsPac
 
 /// The UDP server
 ///
-/// Accepts DNS queries through UDP, and uses the ServerContext to determine
+/// Accepts DNS queries through UDP, and uses the `ServerContext` to determine
 /// how to service the request. Packets are read on a single thread, after which
 /// a new thread is spawned to service the request asynchronously.
 pub struct DnsUdpServer {
     context: Arc<ServerContext>,
-    request_queue: Arc<Mutex<LinkedList<(SocketAddr, DnsPacket)>>>,
+    request_queue: Arc<Mutex<VecDeque<(SocketAddr, DnsPacket)>>>,
     request_cond: Arc<Condvar>,
     thread_count: usize
 }
@@ -174,7 +164,7 @@ impl DnsUdpServer {
     pub fn new(context: Arc<ServerContext>, thread_count: usize) -> DnsUdpServer {
         DnsUdpServer {
             context: context,
-            request_queue: Arc::new(Mutex::new(LinkedList::new())),
+            request_queue: Arc::new(Mutex::new(VecDeque::new())),
             request_cond: Arc::new(Condvar::new()),
             thread_count: thread_count
         }
@@ -187,7 +177,7 @@ impl DnsServer for DnsUdpServer {
     ///
     /// This method takes ownership of the server, preventing the method from
     /// being called multiple times.
-    fn run_server(mut self) -> bool {
+    fn run_server(self) -> bool {
 
         // Bind the socket
         let socket = match UdpSocket::bind(("0.0.0.0", self.context.dns_port)) {
@@ -199,7 +189,7 @@ impl DnsServer for DnsUdpServer {
         };
 
         // Spawn threads for handling requests
-        for thread_no in 0..self.thread_count {
+        for _ in 0..self.thread_count {
             let socket_clone = match socket.try_clone() {
                 Ok(x) => x,
                 Err(e) => {
@@ -232,7 +222,7 @@ impl DnsServer for DnsUdpServer {
 
                     // Check for EDNS
                     if request.resources.len() == 1 {
-                        if let &DnsRecord::OPT { packet_len, .. } = &request.resources[0] {
+                        if let DnsRecord::OPT { packet_len, .. } = request.resources[0] {
                             size_limit = packet_len as usize;
                         }
                     }
@@ -405,18 +395,18 @@ mod tests {
     use std::net::Ipv4Addr;
     use std::io::{Error, ErrorKind};
 
-    use dns::protocol::{DnsPacket, DnsQuestion, QueryType, DnsRecord, ResultCode};
+    use dns::protocol::{DnsPacket, DnsQuestion, QueryType, DnsRecord, ResultCode, TransientTtl};
 
     use super::*;
 
     use dns::context::ResolveStrategy;
     use dns::context::tests::create_test_context;
 
-    fn build_query(qname: &str, qtype: QueryType) -> DnsPacket {
+    fn build_query(qname: &str, qtype: &QueryType) -> DnsPacket {
         let mut query_packet = DnsPacket::new();
         query_packet.header.recursion_desired = true;
 
-        query_packet.questions.push(DnsQuestion::new(&qname.to_string(), qtype));
+        query_packet.questions.push(DnsQuestion::new(qname.to_string(), qtype.clone()));
 
         query_packet
     }
@@ -433,30 +423,30 @@ mod tests {
                     packet.answers.push(DnsRecord::A {
                         domain: "google.com".to_string(),
                         addr: "127.0.0.1".parse::<Ipv4Addr>().unwrap(),
-                        ttl: 3600
+                        ttl: TransientTtl(3600)
                     });
                 } else if qname == "www.facebook.com" && qtype == QueryType::CNAME {
                     packet.answers.push(DnsRecord::CNAME {
                         domain: "www.facebook.com".to_string(),
                         host: "cdn.facebook.com".to_string(),
-                        ttl: 3600
+                        ttl: TransientTtl(3600)
                     });
                     packet.answers.push(DnsRecord::A {
                         domain: "cdn.facebook.com".to_string(),
                         addr: "127.0.0.1".parse::<Ipv4Addr>().unwrap(),
-                        ttl: 3600
+                        ttl: TransientTtl(3600)
                     });
                 } else if qname == "www.microsoft.com" && qtype == QueryType::CNAME {
                     packet.answers.push(DnsRecord::CNAME {
                         domain: "www.microsoft.com".to_string(),
                         host: "cdn.microsoft.com".to_string(),
-                        ttl: 3600
+                        ttl: TransientTtl(3600)
                     });
                 } else if qname == "cdn.microsoft.com" && qtype == QueryType::A {
                     packet.answers.push(DnsRecord::A {
                         domain: "cdn.microsoft.com".to_string(),
                         addr: "127.0.0.1".parse::<Ipv4Addr>().unwrap(),
-                        ttl: 3600
+                        ttl: TransientTtl(3600)
                     });
                 } else {
                     packet.header.rescode = ResultCode::NXDOMAIN;
@@ -478,7 +468,7 @@ mod tests {
         // A successful resolve
         {
             let res = execute_query(context.clone(),
-                                    &build_query("google.com", QueryType::A));
+                                    &build_query("google.com", &QueryType::A));
             assert_eq!(1, res.answers.len());
 
             match res.answers[0] {
@@ -492,7 +482,7 @@ mod tests {
         // A successful resolve, that also resolves a CNAME without recursive lookup
         {
             let res = execute_query(context.clone(),
-                                    &build_query("www.facebook.com", QueryType::CNAME));
+                                    &build_query("www.facebook.com", &QueryType::CNAME));
             assert_eq!(2, res.answers.len());
 
             match res.answers[0] {
@@ -513,7 +503,7 @@ mod tests {
         // A successful resolve, that also resolves a CNAME through recursive lookup
         {
             let res = execute_query(context.clone(),
-                                    &build_query("www.microsoft.com", QueryType::CNAME));
+                                    &build_query("www.microsoft.com", &QueryType::CNAME));
             assert_eq!(2, res.answers.len());
 
             match res.answers[0] {
@@ -534,7 +524,7 @@ mod tests {
         // An unsuccessful resolve, but without any error
         {
             let res = execute_query(context.clone(),
-                                    &build_query("yahoo.com", QueryType::A));
+                                    &build_query("yahoo.com", &QueryType::A));
             assert_eq!(ResultCode::NXDOMAIN, res.header.rescode);
             assert_eq!(0, res.answers.len());
         };
@@ -551,7 +541,7 @@ mod tests {
         // no longer allowed
         {
             let res = execute_query(context.clone(),
-                                    &build_query("yahoo.com", QueryType::A));
+                                    &build_query("yahoo.com", &QueryType::A));
             assert_eq!(ResultCode::REFUSED, res.header.rescode);
             assert_eq!(0, res.answers.len());
         };
@@ -584,7 +574,7 @@ mod tests {
         // We expect this to set the server failure rescode
         {
             let res = execute_query(context2.clone(),
-                                    &build_query("yahoo.com", QueryType::A));
+                                    &build_query("yahoo.com", &QueryType::A));
             assert_eq!(ResultCode::SERVFAIL, res.header.rescode);
             assert_eq!(0, res.answers.len());
         };

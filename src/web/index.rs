@@ -47,11 +47,13 @@ impl IndexAction {
 }
 
 impl Action for IndexAction {
+
+    #[allow(trivial_regex)]
     fn get_regex(&self) -> Regex {
         Regex::new(r"^/$").unwrap()
     }
 
-    fn initialize(&self, server: &mut WebServer) {
+    fn initialize(&self, _: &mut WebServer) {
         //let tpl_data = include_str!("templates/cache.html").to_string();
         //if !server.handlebars.register_template_string("cache", tpl_data).is_ok() {
         //    println!("Failed to register cache template");
@@ -74,34 +76,31 @@ impl Action for IndexAction {
             server_udp_queries: self.context.statistics.get_udp_query_count()
         };
 
-        match json_output {
-            true => {
-                let output = match json::encode(&index_response).ok() {
-                    Some(x) => x,
-                    None => return server.error_response(request, "Failed to encode response")
-                };
+        if json_output {
+            let output = match json::encode(&index_response).ok() {
+                Some(x) => x,
+                None => return server.error_response(request, "Failed to encode response")
+            };
 
-                let mut response = Response::from_string(output);
-                response.add_header(Header{
-                    field: "Content-Type".parse::<HeaderField>().unwrap(),
-                    value: "application/json".parse::<AsciiString>().unwrap()
-                });
-                return request.respond(response);
-            },
-            false => {
-                return server.error_response(request, "Not implemented");
-                //let html_data = match server.handlebars.render("cache", &cache_response).ok() {
-                //    Some(x) => x,
-                //    None => return server.error_response(request, "Failed to encode response")
-                //};
+            let mut response = Response::from_string(output);
+            response.add_header(Header{
+                field: "Content-Type".parse::<HeaderField>().unwrap(),
+                value: "application/json".parse::<AsciiString>().unwrap()
+            });
+            request.respond(response)
+        } else {
+            server.error_response(request, "Not implemented")
+            //let html_data = match server.handlebars.render("cache", &cache_response).ok() {
+            //    Some(x) => x,
+            //    None => return server.error_response(request, "Failed to encode response")
+            //};
 
-                //let mut response = Response::from_string(html_data);
-                //response.add_header(Header{
-                //    field: "Content-Type".parse::<HeaderField>().unwrap(),
-                //    value: "text/html".parse::<AsciiString>().unwrap()
-                //});
-                //return request.respond(response);
-            }
-        };
+            //let mut response = Response::from_string(html_data);
+            //response.add_header(Header{
+            //    field: "Content-Type".parse::<HeaderField>().unwrap(),
+            //    value: "text/html".parse::<AsciiString>().unwrap()
+            //});
+            //return request.respond(response);
+        }
     }
 }

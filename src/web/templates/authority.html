@@ -35,8 +35,8 @@ fieldset {
         {{#each zones}}
         <tr>
             <td><a href="/authority/{{domain}}">{{domain}}</a></td>
-            <td>{{mname}}</td>
-            <td>{{rname}}</td>
+            <td>{{m_name}}</td>
+            <td>{{r_name}}</td>
             <td>{{serial}}</td>
             <td>{{refresh}}</td>
             <td>{{retry}}</td>
@@ -60,16 +60,16 @@ fieldset {
         </div>
 
         <div>
-            <label for="mname">Mname</label>
+            <label for="m_name">Mname</label>
             <div>
-                <input type="text" name="mname" id="mname" />
+                <input type="text" name="m_name" id="m_name" />
             </div>
         </div>
 
         <div>
-            <label for="rname">Rname</label>
+            <label for="r_name">Rname</label>
             <div>
-                <input type="text" name="rname" id="rname" />
+                <input type="text" name="r_name" id="r_name" />
             </div>
         </div>
 

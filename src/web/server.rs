@@ -60,7 +60,7 @@ impl WebServer {
             println!("HTTP {:?} {:?}", request.method(), request.url());
 
             let accept_header = request.headers().iter()
-                .filter(|x| x.field.as_str() == "Accept").map(|x| x.clone()).next();
+                .filter(|x| x.field.as_str() == "Accept").cloned().next();
 
             let json_output = match accept_header {
                 Some(ah) => {
@@ -71,7 +71,7 @@ impl WebServer {
             };
 
             let content_type_header = request.headers().iter()
-                .filter(|x| x.field.as_str() == "Content-Type").map(|x| x.clone()).next();
+                .filter(|x| x.field.as_str() == "Content-Type").cloned().next();
 
             let json_input = match content_type_header {
                 Some(ah) => {
@@ -84,14 +84,14 @@ impl WebServer {
             let matching_actions : Vec<&Box<Action>> =
                 self.actions.iter().filter(|x| x.get_regex().is_match(&request.url())).collect();
 
-            if matching_actions.len() > 0 {
+            if matching_actions.is_empty() {
+                let response = Response::empty(StatusCode(404));
+                let _ = request.respond(response);
+            } else {
                 let action = &matching_actions[0];
                 if let Some(caps) = action.get_regex().captures(&request.url().to_string()) {
                     let _ = action.handle(&self, request, &caps, json_input, json_output);
                 }
-            } else {
-                let response = Response::empty(StatusCode(404));
-                let _ = request.respond(response);
             }
         }
     }

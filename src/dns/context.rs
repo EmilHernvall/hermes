@@ -1,4 +1,4 @@
-//! The ServerContext in this thread holds the common state across the server
+//! The `ServerContext` in this thread holds the common state across the server
 
 use std::io::Result;
 use std::sync::Arc;
@@ -44,6 +44,12 @@ pub struct ServerContext {
     pub enable_tcp: bool,
     pub enable_api: bool,
     pub statistics: ServerStatistics
+}
+
+impl Default for ServerContext {
+    fn default() -> Self {
+        ServerContext::new()
+    }
 }
 
 impl ServerContext {

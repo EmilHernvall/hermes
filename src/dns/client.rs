@@ -21,7 +21,7 @@ pub trait DnsClient {
 
     fn run(&self) -> Result<()>;
     fn send_query(&self,
-                  qname: &String,
+                  qname: &str,
                   qtype: QueryType,
                   server: (&str, u16),
                   recursive: bool) -> Result<DnsPacket>;
@@ -183,7 +183,7 @@ impl DnsClient for DnsUdpClient {
     /// method is thread safe, and can be used from any number of threads in
     /// parallell.
     fn send_query(&self,
-                  qname: &String,
+                  qname: &str,
                   qtype: QueryType,
                   server: (&str, u16),
                   recursive: bool) -> Result<DnsPacket> {
@@ -201,7 +201,7 @@ impl DnsClient for DnsUdpClient {
         packet.header.questions = 1;
         packet.header.recursion_desired = recursive;
 
-        packet.questions.push(DnsQuestion::new(&qname, qtype));
+        packet.questions.push(DnsQuestion::new(qname.to_string(), qtype));
 
         // Create a return channel, and add a `PendingQuery` to the list of lookups
         // in progress
@@ -247,7 +247,7 @@ pub mod tests {
     use dns::protocol::{DnsPacket,QueryType};
     use super::*;
 
-    pub type StubCallback = Fn(&String, QueryType, (&str, u16), bool) -> Result<DnsPacket>;
+    pub type StubCallback = Fn(&str, QueryType, (&str, u16), bool) -> Result<DnsPacket>;
 
     pub struct DnsStubClient {
         callback: Box<StubCallback>
@@ -279,7 +279,7 @@ pub mod tests {
         }
 
         fn send_query(&self,
-                      qname: &String,
+                      qname: &str,
                       qtype: QueryType,
                       server: (&str, u16),
                       recursive: bool) -> Result<DnsPacket> {

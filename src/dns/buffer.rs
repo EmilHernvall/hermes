@@ -13,7 +13,7 @@ pub trait PacketBuffer {
     fn pos(&self) -> usize;
     fn seek(&mut self, pos: usize) -> Result<()>;
     fn step(&mut self, steps: usize) -> Result<()>;
-    fn find_label(&self, label: &String) -> Option<usize>;
+    fn find_label(&self, label: &str) -> Option<usize>;
     fn save_label(&mut self, label: &str, pos: usize);
 
     fn write_u8(&mut self, val: u8) -> Result<()> {
@@ -45,13 +45,9 @@ pub trait PacketBuffer {
         Ok(())
     }
 
-    fn qname_len(&self, qname: &String) -> usize {
-        qname.split(".").map(|x| x.len() + 1).fold(1, |x, y| x+y)
-    }
+    fn write_qname(&mut self, qname: &str) -> Result<()> {
 
-    fn write_qname(&mut self, qname: &String) -> Result<()> {
-
-        let split_str = qname.split(".").collect::<Vec<&str>>();
+        let split_str = qname.split('.').collect::<Vec<&str>>();
 
         let mut jump_performed = false;
         for (i, label) in split_str.iter().enumerate() {
@@ -90,6 +86,7 @@ pub trait PacketBuffer {
         Ok(res)
     }
 
+    #[allow(identity_op)]
     fn read_u32(&mut self) -> Result<u32>
     {
         let res = ((try!(self.read()) as u32) << 24) |
@@ -154,6 +151,7 @@ pub trait PacketBuffer {
 
 }
 
+#[derive(Default)]
 pub struct VectorPacketBuffer {
     pub buffer: Vec<u8>,
     pub pos: usize,
@@ -171,8 +169,8 @@ impl VectorPacketBuffer {
 }
 
 impl PacketBuffer for VectorPacketBuffer {
-    fn find_label(&self, label: &String) -> Option<usize> {
-        self.label_lookup.get(label).map(|x| *x)
+    fn find_label(&self, label: &str) -> Option<usize> {
+        self.label_lookup.get(label).cloned()
     }
 
     fn save_label(&mut self, label: &str, pos: usize) {
@@ -241,7 +239,7 @@ impl<'a, T> StreamPacketBuffer<'a, T> where T: Read + 'a {
 }
 
 impl<'a, T> PacketBuffer for StreamPacketBuffer<'a, T> where T: Read + 'a {
-    fn find_label(&self, _: &String) -> Option<usize> {
+    fn find_label(&self, _: &str) -> Option<usize> {
         None
     }
 
@@ -320,8 +318,14 @@ impl BytePacketBuffer {
     }
 }
 
+impl Default for BytePacketBuffer {
+    fn default() -> Self {
+        BytePacketBuffer::new()
+    }
+}
+
 impl PacketBuffer for BytePacketBuffer {
-    fn find_label(&self, _: &String) -> Option<usize> {
+    fn find_label(&self, _: &str) -> Option<usize> {
         None
     }
 
@@ -404,8 +408,8 @@ mod tests {
 
         // Then we set up a slight variation with relies on a jump back to the data of
         // the first name
-        let crafted_data = [0x01, 'b' as u8, 0xC0, 0x02];
-        for b in crafted_data.iter() {
+        let crafted_data = [0x01, b'b' as u8, 0xC0, 0x02];
+        for b in &crafted_data {
             match buffer.write_u8(*b) {
                 Ok(_) => {},
                 Err(_) => panic!()

@@ -15,11 +15,11 @@ pub trait DnsResolver {
     fn get_context(&self) -> Arc<ServerContext>;
 
     fn resolve(&mut self,
-               qname: &String,
-               qtype: QueryType,
+               qname: &str,
+               qtype: &QueryType,
                recursive: bool) -> Result<DnsPacket> {
 
-        if let QueryType::UNKNOWN(_) = qtype {
+        if let QueryType::UNKNOWN(_) = *qtype {
             let mut packet = DnsPacket::new();
             packet.header.rescode = ResultCode::NOTIMP;
             return Ok(packet);
@@ -27,7 +27,7 @@ pub trait DnsResolver {
 
         let context = self.get_context();
 
-        if let Some(qr) = context.authority.query(qname, qtype.clone()) {
+        if let Some(qr) = context.authority.query(qname, qtype) {
             return Ok(qr);
         }
 
@@ -37,12 +37,12 @@ pub trait DnsResolver {
             return Ok(packet);
         }
 
-        if let Some(qr) = context.cache.lookup(qname, qtype.clone()) {
+        if let Some(qr) = context.cache.lookup(qname, qtype) {
             return Ok(qr);
         }
 
-        if qtype == QueryType::A || qtype == QueryType::AAAA {
-            if let Some(qr) = context.cache.lookup(qname, QueryType::CNAME) {
+        if *qtype == QueryType::A || *qtype == QueryType::AAAA {
+            if let Some(qr) = context.cache.lookup(qname, &QueryType::CNAME) {
                 return Ok(qr);
             }
         }
@@ -50,7 +50,7 @@ pub trait DnsResolver {
         self.perform(qname, qtype)
     }
 
-    fn perform(&mut self, qname: &String, qtype: QueryType) -> Result<DnsPacket>;
+    fn perform(&mut self, qname: &str, qtype: &QueryType) -> Result<DnsPacket>;
 }
 
 /// A Forwarding DNS Resolver
@@ -72,12 +72,12 @@ impl ForwardingDnsResolver {
 
 impl DnsResolver for ForwardingDnsResolver {
     fn get_context(&self) -> Arc<ServerContext> {
-        return self.context.clone();
+        self.context.clone()
     }
 
     fn perform(&mut self,
-               qname: &String,
-               qtype: QueryType) -> Result<DnsPacket> {
+               qname: &str,
+               qtype: &QueryType) -> Result<DnsPacket> {
 
         let &(ref host, port) = &self.server;
         let result = self.context.client.send_query(qname,
@@ -89,7 +89,7 @@ impl DnsResolver for ForwardingDnsResolver {
             let _ = self.context.cache.store(&qr.answers);
         }
 
-        return result;
+        result
     }
 }
 
@@ -110,15 +110,16 @@ impl RecursiveDnsResolver {
 
 impl DnsResolver for RecursiveDnsResolver {
     fn get_context(&self) -> Arc<ServerContext> {
-        return self.context.clone();
+        self.context.clone()
     }
 
     fn perform(&mut self,
-               qname: &String,
-               qtype: QueryType) -> Result<DnsPacket> {
+               qname: &str,
+               qtype: &QueryType) -> Result<DnsPacket> {
 
         // Find the closest name server by splitting the label and progessively
-        // moving towards the root servers
+        // moving towards the root servers. I.e. check "google.com", then "com",
+        // and finally "".
         let mut tentative_ns = None;
 
         let labels = qname.split('.').collect::<Vec<&str>>();
@@ -126,9 +127,9 @@ impl DnsResolver for RecursiveDnsResolver {
             let domain = labels[lbl_idx..].join(".");
 
             match self.context.cache
-                .lookup(&domain, QueryType::NS)
+                .lookup(&domain, &QueryType::NS)
                 .and_then(|qr| qr.get_unresolved_ns(&domain))
-                .and_then(|ns| self.context.cache.lookup(&ns, QueryType::A))
+                .and_then(|ns| self.context.cache.lookup(&ns, &QueryType::A))
                 .and_then(|qr| qr.get_random_a()) {
 
                 Some(addr) => {
@@ -157,7 +158,7 @@ impl DnsResolver for RecursiveDnsResolver {
                                                                false));
 
             // If we've got an actual answer, we're done!
-            if response.answers.len() > 0 &&
+            if !response.answers.is_empty() &&
                response.header.rescode == ResultCode::NOERROR {
 
                 let _ = self.context.cache.store(&response.answers);
@@ -193,7 +194,7 @@ impl DnsResolver for RecursiveDnsResolver {
 
             // Recursively resolve the NS
             let recursive_response = try!(self.resolve(&new_ns_name,
-                                                       QueryType::A,
+                                                       &QueryType::A,
                                                        true));
 
             // Pick a random IP and restart
@@ -212,7 +213,7 @@ mod tests {
     use std::sync::Arc;
     use std::net::Ipv4Addr;
 
-    use dns::protocol::{DnsPacket, QueryType, DnsRecord, ResultCode};
+    use dns::protocol::{DnsPacket, QueryType, DnsRecord, ResultCode, TransientTtl};
 
     use super::*;
 
@@ -229,7 +230,7 @@ mod tests {
                     packet.answers.push(DnsRecord::A {
                         domain: "google.com".to_string(),
                         addr: "127.0.0.1".parse::<Ipv4Addr>().unwrap(),
-                        ttl: 3600
+                        ttl: TransientTtl(3600)
                     });
                 } else {
                     packet.header.rescode = ResultCode::NXDOMAIN;
@@ -252,9 +253,7 @@ mod tests {
 
         // First verify that we get a match back
         {
-            let res = match resolver.resolve(&"google.com".to_string(),
-                                             QueryType::A,
-                                             true) {
+            let res = match resolver.resolve("google.com", &QueryType::A, true) {
                 Ok(x) => x,
                 Err(_) => panic!()
             };
@@ -272,9 +271,7 @@ mod tests {
         // Do the same lookup again, and verify that it's present in the cache
         // and that the counter has been updated
         {
-            let res = match resolver.resolve(&"google.com".to_string(),
-                                             QueryType::A,
-                                             true) {
+            let res = match resolver.resolve("google.com", &QueryType::A, true) {
                 Ok(x) => x,
                 Err(_) => panic!()
             };
@@ -296,9 +293,7 @@ mod tests {
 
         // Do a failed lookup
         {
-            let res = match resolver.resolve(&"yahoo.com".to_string(),
-                                             QueryType::A,
-                                             true) {
+            let res = match resolver.resolve("yahoo.com", &QueryType::A, true) {
                 Ok(x) => x,
                 Err(_) => panic!()
             };
@@ -321,9 +316,8 @@ mod tests {
         let mut resolver = context.create_resolver(context.clone());
 
         // Expect failure when no name servers are available
-        match resolver.resolve(&"google.com".to_string(), QueryType::A, true) {
-            Ok(_) => panic!(),
-            Err(_) => {}
+        if let Ok(_) = resolver.resolve("google.com", &QueryType::A, true) {
+            panic!();
         }
     }
 
@@ -339,9 +333,8 @@ mod tests {
         let mut resolver = context.create_resolver(context.clone());
 
         // Expect failure when no name servers are available
-        match resolver.resolve(&"google.com".to_string(), QueryType::A, true) {
-            Ok(_) => panic!(),
-            Err(_) => {}
+        if let Ok(_) = resolver.resolve("google.com", &QueryType::A, true) {
+            panic!();
         }
 
         // Insert name server, but no corresponding A record
@@ -349,14 +342,13 @@ mod tests {
         nameservers.push(DnsRecord::NS {
             domain: "".to_string(),
             host: "a.myroot.net".to_string(),
-            ttl: 3600
+            ttl: TransientTtl(3600)
         });
 
         let _ = context.cache.store(&nameservers);
 
-        match resolver.resolve(&"google.com".to_string(), QueryType::A, true) {
-            Ok(_) => panic!(),
-            Err(_) => {}
+        if let Ok(_) = resolver.resolve("google.com", &QueryType::A, true) {
+            panic!();
         }
     }
 
@@ -372,7 +364,7 @@ mod tests {
                     packet.answers.push(DnsRecord::A {
                         domain: "a.google.com".to_string(),
                         addr: "127.0.0.1".parse::<Ipv4Addr>().unwrap(),
-                        ttl: 3600
+                        ttl: TransientTtl(3600)
                     });
 
                     return Ok(packet)
@@ -383,7 +375,7 @@ mod tests {
                     packet.answers.push(DnsRecord::A {
                         domain: "b.google.com".to_string(),
                         addr: "127.0.0.1".parse::<Ipv4Addr>().unwrap(),
-                        ttl: 3600
+                        ttl: TransientTtl(3600)
                     });
 
                     return Ok(packet)
@@ -394,7 +386,7 @@ mod tests {
                     packet.answers.push(DnsRecord::A {
                         domain: "c.google.com".to_string(),
                         addr: "127.0.0.1".parse::<Ipv4Addr>().unwrap(),
-                        ttl: 3600
+                        ttl: TransientTtl(3600)
                     });
 
                     return Ok(packet)
@@ -408,9 +400,8 @@ mod tests {
         let mut resolver = context.create_resolver(context.clone());
 
         // Expect failure when no name servers are available
-        match resolver.resolve(&"google.com".to_string(), QueryType::A, true) {
-            Ok(_) => panic!(),
-            Err(_) => {}
+        if let Ok(_) = resolver.resolve("google.com", &QueryType::A, true) {
+            panic!();
         }
 
         // Insert root servers
@@ -419,18 +410,18 @@ mod tests {
             nameservers.push(DnsRecord::NS {
                 domain: "".to_string(),
                 host: "a.myroot.net".to_string(),
-                ttl: 3600
+                ttl: TransientTtl(3600)
             });
             nameservers.push(DnsRecord::A {
                 domain: "a.myroot.net".to_string(),
                 addr: "127.0.0.1".parse::<Ipv4Addr>().unwrap(),
-                ttl: 3600
+                ttl: TransientTtl(3600)
             });
 
             let _ = context.cache.store(&nameservers);
         }
 
-        match resolver.resolve(&"google.com".to_string(), QueryType::A, true) {
+        match resolver.resolve("google.com", &QueryType::A, true) {
             Ok(packet) => {
                 assert_eq!(1, packet.header.id);
             },
@@ -443,18 +434,18 @@ mod tests {
             nameservers.push(DnsRecord::NS {
                 domain: "com".to_string(),
                 host: "a.mytld.net".to_string(),
-                ttl: 3600
+                ttl: TransientTtl(3600)
             });
             nameservers.push(DnsRecord::A {
                 domain: "a.mytld.net".to_string(),
                 addr: "127.0.0.2".parse::<Ipv4Addr>().unwrap(),
-                ttl: 3600
+                ttl: TransientTtl(3600)
             });
 
             let _ = context.cache.store(&nameservers);
         }
 
-        match resolver.resolve(&"google.com".to_string(), QueryType::A, true) {
+        match resolver.resolve("google.com", &QueryType::A, true) {
             Ok(packet) => {
                 assert_eq!(2, packet.header.id);
             },
@@ -467,18 +458,18 @@ mod tests {
             nameservers.push(DnsRecord::NS {
                 domain: "google.com".to_string(),
                 host: "ns1.google.com".to_string(),
-                ttl: 3600
+                ttl: TransientTtl(3600)
             });
             nameservers.push(DnsRecord::A {
                 domain: "ns1.google.com".to_string(),
                 addr: "127.0.0.3".parse::<Ipv4Addr>().unwrap(),
-                ttl: 3600
+                ttl: TransientTtl(3600)
             });
 
             let _ = context.cache.store(&nameservers);
         }
 
-        match resolver.resolve(&"google.com".to_string(), QueryType::A, true) {
+        match resolver.resolve("google.com", &QueryType::A, true) {
             Ok(packet) => {
                 assert_eq!(3, packet.header.id);
             },
@@ -496,21 +487,21 @@ mod tests {
                     packet.answers.push(DnsRecord::A {
                         domain: "google.com".to_string(),
                         addr: "127.0.0.1".parse::<Ipv4Addr>().unwrap(),
-                        ttl: 3600
+                        ttl: TransientTtl(3600)
                     });
                 } else {
                     packet.header.rescode = ResultCode::NXDOMAIN;
 
                     packet.authorities.push(DnsRecord::SOA {
                         domain: "google.com".to_string(),
-                        rname: "google.com".to_string(),
-                        mname: "google.com".to_string(),
+                        r_name: "google.com".to_string(),
+                        m_name: "google.com".to_string(),
                         serial: 0,
                         refresh: 3600,
                         retry: 3600,
                         expire: 3600,
                         minimum: 3600,
-                        ttl: 3600
+                        ttl: TransientTtl(3600)
                     });
                 }
 
@@ -524,20 +515,20 @@ mod tests {
         nameservers.push(DnsRecord::NS {
             domain: "google.com".to_string(),
             host: "ns1.google.com".to_string(),
-            ttl: 3600
+            ttl: TransientTtl(3600)
         });
         nameservers.push(DnsRecord::A {
             domain: "ns1.google.com".to_string(),
             addr: "127.0.0.1".parse::<Ipv4Addr>().unwrap(),
-            ttl: 3600
+            ttl: TransientTtl(3600)
         });
 
         let _ = context.cache.store(&nameservers);
 
         // Check that we can successfully resolve
         {
-            let res = match resolver.resolve(&"google.com".to_string(),
-                                             QueryType::A,
+            let res = match resolver.resolve("google.com",
+                                             &QueryType::A,
                                              true) {
                 Ok(x) => x,
                 Err(_) => panic!()
@@ -555,8 +546,8 @@ mod tests {
 
         // And that we won't find anything for a domain that isn't present
         {
-            let res = match resolver.resolve(&"foobar.google.com".to_string(),
-                                             QueryType::A,
+            let res = match resolver.resolve("foobar.google.com",
+                                             &QueryType::A,
                                              true) {
                 Ok(x) => x,
                 Err(_) => panic!()
@@ -568,8 +559,8 @@ mod tests {
 
         // Perform another successful query, that should hit the cache
         {
-            let res = match resolver.resolve(&"google.com".to_string(),
-                                             QueryType::A,
+            let res = match resolver.resolve("google.com",
+                                             &QueryType::A,
                                              true) {
                 Ok(x) => x,
                 Err(_) => panic!()

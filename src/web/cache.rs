@@ -63,6 +63,8 @@ impl CacheAction {
 }
 
 impl Action for CacheAction {
+
+    #[allow(trivial_regex)]
     fn get_regex(&self) -> Regex {
         Regex::new(r"^/cache").unwrap()
     }
@@ -105,11 +107,11 @@ impl Action for CacheAction {
                 entries: Vec::new()
             };
 
-            for (_, ref entry) in &rs.record_types {
+            for entry in rs.record_types.values() {
 
                 match *entry {
-                    &RecordSet::NoRecords { .. } => {},
-                    &RecordSet::Records { ref records, .. } => {
+                    RecordSet::NoRecords { .. } => {},
+                    RecordSet::Records { ref records, .. } => {
                         for entry in records {
                             cache_record.entries.push(rr_to_json(id, &entry.record));
                             id += 1;
@@ -123,43 +125,40 @@ impl Action for CacheAction {
 
         //let end_of_object = Local::now();
 
-        match json_output {
-            true => {
-                let output = match json::encode(&cache_response).ok() {
-                    Some(x) => x,
-                    None => return server.error_response(request, "Failed to encode response")
-                };
+        if json_output {
+            let output = match json::encode(&cache_response).ok() {
+                Some(x) => x,
+                None => return server.error_response(request, "Failed to encode response")
+            };
 
-                //let end_of_output = Local::now();
-                //println!("list: {:?}", (end_of_list-start_of_eq).num_milliseconds());
-                //println!("object: {:?}", (end_of_object-end_of_list).num_milliseconds());
-                //println!("output: {:?}", (end_of_output-end_of_object).num_milliseconds());
+            //let end_of_output = Local::now();
+            //println!("list: {:?}", (end_of_list-start_of_eq).num_milliseconds());
+            //println!("object: {:?}", (end_of_object-end_of_list).num_milliseconds());
+            //println!("output: {:?}", (end_of_output-end_of_object).num_milliseconds());
 
-                let mut response = Response::from_string(output);
-                response.add_header(Header{
-                    field: "Content-Type".parse::<HeaderField>().unwrap(),
-                    value: "application/json".parse::<AsciiString>().unwrap()
-                });
-                return request.respond(response);
-            },
-            false => {
-                let html_data = match server.handlebars.render("cache", &cache_response).ok() {
-                    Some(x) => x,
-                    None => return server.error_response(request, "Failed to encode response")
-                };
+            let mut response = Response::from_string(output);
+            response.add_header(Header{
+                field: "Content-Type".parse::<HeaderField>().unwrap(),
+                value: "application/json".parse::<AsciiString>().unwrap()
+            });
+            request.respond(response)
+        } else {
+            let html_data = match server.handlebars.render("cache", &cache_response).ok() {
+                Some(x) => x,
+                None => return server.error_response(request, "Failed to encode response")
+            };
 
-                //let end_of_output = Local::now();
-                //println!("list: {:?}", (end_of_list-start_of_eq).num_milliseconds());
-                //println!("object: {:?}", (end_of_object-end_of_list).num_milliseconds());
-                //println!("output: {:?}", (end_of_output-end_of_object).num_milliseconds());
+            //let end_of_output = Local::now();
+            //println!("list: {:?}", (end_of_list-start_of_eq).num_milliseconds());
+            //println!("object: {:?}", (end_of_object-end_of_list).num_milliseconds());
+            //println!("output: {:?}", (end_of_output-end_of_object).num_milliseconds());
 
-                let mut response = Response::from_string(html_data);
-                response.add_header(Header{
-                    field: "Content-Type".parse::<HeaderField>().unwrap(),
-                    value: "text/html".parse::<AsciiString>().unwrap()
-                });
-                return request.respond(response);
-            }
-        };
+            let mut response = Response::from_string(html_data);
+            response.add_header(Header{
+                field: "Content-Type".parse::<HeaderField>().unwrap(),
+                value: "text/html".parse::<AsciiString>().unwrap()
+            });
+            request.respond(response)
+        }
     }
 }

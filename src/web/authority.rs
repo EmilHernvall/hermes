@@ -11,7 +11,7 @@ use rustc_serialize::json::{self, ToJson, Json};
 
 use dns::context::ServerContext;
 use dns::authority::Zone;
-use dns::protocol::DnsRecord;
+use dns::protocol::{DnsRecord,TransientTtl};
 
 use web::util::{FormDataDecodable,rr_to_json,decode_json,parse_formdata};
 use web::server::{Action,WebServer};
@@ -20,8 +20,8 @@ use web::server::{Action,WebServer};
 pub struct ZoneCreateRequest
 {
     pub domain: String,
-    pub mname: String,
-    pub rname: String,
+    pub m_name: String,
+    pub r_name: String,
     pub serial: Option<u32>,
     pub refresh: Option<u32>,
     pub retry: Option<u32>,
@@ -41,20 +41,20 @@ impl FormDataDecodable<ZoneCreateRequest> for ZoneCreateRequest {
             None => return Err(Error::new(ErrorKind::InvalidInput, "missing domain"))
         };
 
-        let mname = match d.get("mname") {
+        let m_name = match d.get("m_name") {
             Some(x) => x,
-            None => return Err(Error::new(ErrorKind::InvalidInput, "missing mname"))
+            None => return Err(Error::new(ErrorKind::InvalidInput, "missing m_name"))
         };
 
-        let rname = match d.get("rname") {
+        let r_name = match d.get("r_name") {
             Some(x) => x,
-            None => return Err(Error::new(ErrorKind::InvalidInput, "missing rname"))
+            None => return Err(Error::new(ErrorKind::InvalidInput, "missing r_name"))
         };
 
         Ok(ZoneCreateRequest {
             domain: domain.clone(),
-            mname: mname.clone(),
-            rname: rname.clone(),
+            m_name: m_name.clone(),
+            r_name: r_name.clone(),
             serial: d.get("serial").and_then(|x| x.parse::<u32>().ok()),
             refresh: d.get("refresh").and_then(|x| x.parse::<u32>().ok()),
             retry: d.get("retry").and_then(|x| x.parse::<u32>().ok()),
@@ -103,13 +103,13 @@ impl FormDataDecodable<RecordRequest> for RecordRequest {
             recordtype: recordtype.clone(),
             domain: domain.clone(),
             ttl: ttl,
-            host: d.get("host").map(|x| x.clone())
+            host: d.get("host").cloned()
         })
     }
 }
 
 impl RecordRequest {
-    fn to_resourcerecord(self) -> Option<DnsRecord> {
+    fn into_resourcerecord(self) -> Option<DnsRecord> {
         match self.recordtype.as_str() {
             "A" => {
                 let host = match self.host.and_then(|x| x.parse::<Ipv4Addr>().ok()) {
@@ -120,7 +120,7 @@ impl RecordRequest {
                 Some(DnsRecord::A {
                     domain: self.domain,
                     addr: host,
-                    ttl: self.ttl
+                    ttl: TransientTtl(self.ttl)
                 })
             },
             "AAAA" => {
@@ -132,7 +132,7 @@ impl RecordRequest {
                 Some(DnsRecord::AAAA {
                     domain: self.domain,
                     addr: host,
-                    ttl: self.ttl
+                    ttl: TransientTtl(self.ttl)
                 })
             },
             "CNAME" => {
@@ -144,7 +144,7 @@ impl RecordRequest {
                 Some(DnsRecord::CNAME {
                     domain: self.domain,
                     host: host,
-                    ttl: self.ttl
+                    ttl: TransientTtl(self.ttl)
                 })
             },
             _ => None
@@ -165,6 +165,8 @@ impl AuthorityAction {
 }
 
 impl Action for AuthorityAction {
+
+    #[allow(trivial_regex)]
     fn get_regex(&self) -> Regex {
         Regex::new(r"^/authority$").unwrap()
     }
@@ -195,8 +197,8 @@ impl Action for AuthorityAction {
                 for zone in &zones.zones() {
                     let mut d = BTreeMap::new();
                     d.insert("domain".to_string(), zone.domain.to_json());
-                    d.insert("mname".to_string(), zone.mname.to_json());
-                    d.insert("rname".to_string(), zone.rname.to_json());
+                    d.insert("m_name".to_string(), zone.m_name.to_json());
+                    d.insert("r_name".to_string(), zone.r_name.to_json());
                     d.insert("serial".to_string(), zone.serial.to_json());
                     d.insert("refresh".to_string(), zone.refresh.to_json());
                     d.insert("retry".to_string(), zone.retry.to_json());
@@ -212,34 +214,31 @@ impl Action for AuthorityAction {
                 result_dict.insert("zones".to_string(), zones_arr);
                 let result_obj = Json::Object(result_dict);
 
-                match json_output {
-                    true => {
-                        let output = match json::encode(&result_obj).ok() {
-                            Some(x) => x,
-                            None => return server.error_response(request, "Failed to parse request")
-                        };
+                if json_output {
+                    let output = match json::encode(&result_obj).ok() {
+                        Some(x) => x,
+                        None => return server.error_response(request, "Failed to parse request")
+                    };
 
-                        let mut response = Response::from_string(output);
-                        response.add_header(Header{
-                            field: "Content-Type".parse::<HeaderField>().unwrap(),
-                            value: "application/json".parse::<AsciiString>().unwrap()
-                        });
-                        return request.respond(response);
-                    },
-                    false => {
-                        let html_data = match server.handlebars.render("authority", &result_obj) {
-                            Ok(x) => x,
-                            Err(e) => return server.error_response(request, &("Failed to encode response: ".to_string() + e.description()))
-                        };
+                    let mut response = Response::from_string(output);
+                    response.add_header(Header{
+                        field: "Content-Type".parse::<HeaderField>().unwrap(),
+                        value: "application/json".parse::<AsciiString>().unwrap()
+                    });
+                    return request.respond(response);
+                } else {
+                    let html_data = match server.handlebars.render("authority", &result_obj) {
+                        Ok(x) => x,
+                        Err(e) => return server.error_response(request, &("Failed to encode response: ".to_string() + e.description()))
+                    };
 
-                        let mut response = Response::from_string(html_data);
-                        response.add_header(Header{
-                            field: "Content-Type".parse::<HeaderField>().unwrap(),
-                            value: "text/html".parse::<AsciiString>().unwrap()
-                        });
-                        return request.respond(response);
-                    }
-                };
+                    let mut response = Response::from_string(html_data);
+                    response.add_header(Header{
+                        field: "Content-Type".parse::<HeaderField>().unwrap(),
+                        value: "text/html".parse::<AsciiString>().unwrap()
+                    });
+                    return request.respond(response);
+                }
             },
             Method::Post => {
                 let request_data = if json_input {
@@ -248,7 +247,7 @@ impl Action for AuthorityAction {
                         None => return server.error_response(request, "Failed to parse request")
                     }
                 } else {
-                    match parse_formdata(&mut request.as_reader()).and_then(|x| ZoneCreateRequest::from_formdata(x)) {
+                    match parse_formdata(&mut request.as_reader()).and_then(ZoneCreateRequest::from_formdata) {
                         Ok(x) => x,
                         Err(e) => return server.error_response(request, e.description())
                     }
@@ -260,8 +259,8 @@ impl Action for AuthorityAction {
                 };
 
                 let mut zone = Zone::new(request_data.domain,
-                                         request_data.mname,
-                                         request_data.rname);
+                                         request_data.m_name,
+                                         request_data.r_name);
                 zone.serial = 0;
                 zone.refresh = request_data.refresh.unwrap_or(3600);
                 zone.retry = request_data.retry.unwrap_or(3600);
@@ -351,34 +350,31 @@ impl Action for ZoneAction {
                 result_dict.insert("records".to_string(), records_arr);
                 let result_obj = Json::Object(result_dict);
 
-                match json_output {
-                    true => {
-                        let output = match json::encode(&result_obj).ok() {
-                            Some(x) => x,
-                            None => return server.error_response(request, "Failed to parse request")
-                        };
+                if json_output {
+                    let output = match json::encode(&result_obj).ok() {
+                        Some(x) => x,
+                        None => return server.error_response(request, "Failed to parse request")
+                    };
 
-                        let mut response = Response::from_string(output);
-                        response.add_header(Header{
-                            field: "Content-Type".parse::<HeaderField>().unwrap(),
-                            value: "application/json".parse::<AsciiString>().unwrap()
-                        });
-                        return request.respond(response);
-                    },
-                    false => {
-                        let html_data = match server.handlebars.render("zone", &result_obj).ok() {
-                            Some(x) => x,
-                            None => return server.error_response(request, "Failed to encode response")
-                        };
+                    let mut response = Response::from_string(output);
+                    response.add_header(Header{
+                        field: "Content-Type".parse::<HeaderField>().unwrap(),
+                        value: "application/json".parse::<AsciiString>().unwrap()
+                    });
+                    return request.respond(response);
+                } else {
+                    let html_data = match server.handlebars.render("zone", &result_obj).ok() {
+                        Some(x) => x,
+                        None => return server.error_response(request, "Failed to encode response")
+                    };
 
-                        let mut response = Response::from_string(html_data);
-                        response.add_header(Header{
-                            field: "Content-Type".parse::<HeaderField>().unwrap(),
-                            value: "text/html".parse::<AsciiString>().unwrap()
-                        });
-                        return request.respond(response);
-                    }
-                };
+                    let mut response = Response::from_string(html_data);
+                    response.add_header(Header{
+                        field: "Content-Type".parse::<HeaderField>().unwrap(),
+                        value: "text/html".parse::<AsciiString>().unwrap()
+                    });
+                    return request.respond(response);
+                }
             },
             Method::Post | Method::Delete => {
                 let request_data = if json_input {
@@ -387,7 +383,7 @@ impl Action for ZoneAction {
                         Err(e) => return server.error_response(request, e.description())
                     }
                 } else {
-                    match parse_formdata(&mut request.as_reader()).and_then(|x| RecordRequest::from_formdata(x)) {
+                    match parse_formdata(&mut request.as_reader()).and_then(RecordRequest::from_formdata) {
                         Ok(x) => x,
                         Err(e) => return server.error_response(request, e.description())
                     }
@@ -399,7 +395,7 @@ impl Action for ZoneAction {
                     request_data.delete_record.unwrap_or(false)
                 };
 
-                let rr = match request_data.to_resourcerecord() {
+                let rr = match request_data.into_resourcerecord() {
                     Some(x) => x,
                     None => return server.error_response(request, "Invalid record specification")
                 };

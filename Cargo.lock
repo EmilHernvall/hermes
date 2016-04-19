@@ -4,6 +4,7 @@ version = "0.1.0"
 dependencies = [
  "ascii 0.5.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "chrono 0.2.19 (registry+https://github.com/rust-lang/crates.io-index)",
+ "clippy 0.0.63 (registry+https://github.com/rust-lang/crates.io-index)",
  "getopts 0.2.14 (registry+https://github.com/rust-lang/crates.io-index)",
  "handlebars 0.15.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "rand 0.3.13 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -47,6 +48,18 @@ dependencies = [
 name = "chunked_transfer"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "clippy"
+version = "0.0.63"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "quine-mc_cluskey 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "regex-syntax 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "semver 0.2.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "toml 0.1.28 (registry+https://github.com/rust-lang/crates.io-index)",
+ "unicode-normalization 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
+]
 
 [[package]]
 name = "encoding"
@@ -170,6 +183,11 @@ dependencies = [
 ]
 
 [[package]]
+name = "nom"
+version = "1.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
 name = "num"
 version = "0.1.30"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -181,6 +199,11 @@ dependencies = [
 [[package]]
 name = "quick-error"
 version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "quine-mc_cluskey"
+version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
@@ -210,9 +233,22 @@ version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
+name = "regex-syntax"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
 name = "rustc-serialize"
 version = "0.3.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "semver"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "nom 1.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
+]
 
 [[package]]
 name = "time"
@@ -236,6 +272,19 @@ dependencies = [
  "rustc-serialize 0.3.18 (registry+https://github.com/rust-lang/crates.io-index)",
  "url 0.2.38 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
+
+[[package]]
+name = "toml"
+version = "0.1.28"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "rustc-serialize 0.3.18 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "unicode-normalization"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
 name = "url"

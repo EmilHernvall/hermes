@@ -6,7 +6,7 @@ use rustc_serialize::json::{self,ToJson,Json,DecodeResult,DecoderError};
 use rustc_serialize::Decodable;
 use tiny_http::Request;
 
-use dns::protocol::DnsRecord;
+use dns::protocol::{DnsRecord,TransientTtl};
 
 pub trait FormDataDecodable<T> {
     fn from_formdata(fields: Vec<(String, String)>) -> Result<T>;
@@ -14,9 +14,9 @@ pub trait FormDataDecodable<T> {
 
 fn hex_to_num(c: char) -> u8 {
     match c {
-        '0'...'9' => (c as u8) - ('0' as u8),
-        'a'...'f' => (c as u8) - ('a' as u8) + 0xA,
-        'A'...'F' => (c as u8) - ('A' as u8) + 0xA,
+        '0'...'9' => (c as u8) - (b'0' as u8),
+        'a'...'f' => (c as u8) - (b'a' as u8) + 0xA,
+        'A'...'F' => (c as u8) - (b'A' as u8) + 0xA,
         _ => 0
     }
 }
@@ -50,8 +50,8 @@ pub fn parse_formdata<R: Read>(reader: &mut R) -> Result<Vec<(String, String)>> 
     let mut data = String::new();
     try!(reader.read_to_string(&mut data));
 
-    let res = data.split("&").filter_map(|x| {
-        let s = x.split("=").collect::<Vec<&str>>();
+    let res = data.split('&').filter_map(|x| {
+        let s = x.split('=').collect::<Vec<&str>>();
         match s.len() {
             2 => Some((url_decode(s[0]), url_decode(s[1]))),
             _ => None
@@ -70,27 +70,23 @@ pub fn rr_to_json(id: u32, rr: &DnsRecord) -> Json {
     d.insert("type".to_string(), qtype.to_json());
 
     match *rr {
-        DnsRecord::A { ref domain, ref addr, ttl } => {
+        DnsRecord::A { ref domain, ref addr, ttl: TransientTtl(ttl) } => {
             d.insert("domain".to_string(), domain.to_json());
             d.insert("host".to_string(), addr.to_string().to_json());
             d.insert("ttl".to_string(), ttl.to_json());
         },
-        DnsRecord::AAAA { ref domain, ref addr, ttl } => {
+        DnsRecord::AAAA { ref domain, ref addr, ttl: TransientTtl(ttl) } => {
             d.insert("domain".to_string(), domain.to_json());
             d.insert("host".to_string(), addr.to_string().to_json());
             d.insert("ttl".to_string(), ttl.to_json());
         },
-        DnsRecord::NS { ref domain, ref host, ttl } => {
+        DnsRecord::NS { ref domain, ref host, ttl: TransientTtl(ttl) } |
+        DnsRecord::CNAME { ref domain, ref host, ttl: TransientTtl(ttl) } => {
             d.insert("domain".to_string(), domain.to_json());
             d.insert("host".to_string(), host.to_json());
             d.insert("ttl".to_string(), ttl.to_json());
         },
-        DnsRecord::CNAME { ref domain, ref host, ttl } => {
-            d.insert("domain".to_string(), domain.to_json());
-            d.insert("host".to_string(), host.to_json());
-            d.insert("ttl".to_string(), ttl.to_json());
-        },
-        DnsRecord::SRV { ref domain, priority, weight, port, ref host, ttl } => {
+        DnsRecord::SRV { ref domain, priority, weight, port, ref host, ttl: TransientTtl(ttl) } => {
             d.insert("domain".to_string(), domain.to_json());
             d.insert("host".to_string(), host.to_json());
             d.insert("ttl".to_string(), ttl.to_json());
@@ -98,24 +94,23 @@ pub fn rr_to_json(id: u32, rr: &DnsRecord) -> Json {
             d.insert("weight".to_string(), weight.to_json());
             d.insert("port".to_string(), port.to_json());
         },
-        DnsRecord::MX { ref domain, priority, ref host, ttl } => {
+        DnsRecord::MX { ref domain, priority, ref host, ttl: TransientTtl(ttl) } => {
             d.insert("domain".to_string(), domain.to_json());
             d.insert("host".to_string(), (priority.to_string() + " " + host).to_json());
             d.insert("ttl".to_string(), ttl.to_json());
         },
-        DnsRecord::UNKNOWN { ref domain, qtype, data_len, ttl } => {
+        DnsRecord::UNKNOWN { ref domain, qtype, data_len, ttl: TransientTtl(ttl) } => {
             d.insert("domain".to_string(), domain.to_json());
             d.insert("ttl".to_string(), ttl.to_json());
             d.insert("type".to_string(), qtype.to_json());
             d.insert("len".to_string(), data_len.to_json());
         },
-        DnsRecord::SOA { .. } => {
-        },
-        DnsRecord::TXT { ref domain, ref data, ttl } => {
+        DnsRecord::TXT { ref domain, ref data, ttl: TransientTtl(ttl) } => {
             d.insert("domain".to_string(), domain.to_json());
             d.insert("ttl".to_string(), ttl.to_json());
             d.insert("txt".to_string(), data.to_json());
         }
+        DnsRecord::SOA { .. } |
         DnsRecord::OPT { .. } => {
         }
     }
