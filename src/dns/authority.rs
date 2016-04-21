@@ -177,7 +177,7 @@ impl Authority {
         Ok(())
     }
 
-    pub fn query(&self, qname: &str, qtype: &QueryType) -> Option<DnsPacket>
+    pub fn query(&self, qname: &str, qtype: QueryType) -> Option<DnsPacket>
     {
         let zones = match self.zones.read().ok() {
             Some(x) => x,
@@ -219,7 +219,7 @@ impl Authority {
             }
 
             let rtype = rec.get_querytype();
-            if *qtype == rtype || (*qtype == QueryType::A &&
+            if qtype == rtype || (qtype == QueryType::A &&
                                   rtype == QueryType::CNAME) {
 
                 packet.answers.push(rec.clone());

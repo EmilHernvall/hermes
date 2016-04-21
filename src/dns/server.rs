@@ -1,10 +1,10 @@
 //! UDP and TCP server implementations for DNS
 
-use std::io::Write;
+use std::io::{Result,Write};
 use std::net::{UdpSocket, TcpListener, TcpStream, Shutdown};
 use std::sync::{Arc,Mutex,Condvar};
 use std::sync::mpsc::{channel, Sender};
-use std::thread::spawn;
+use std::thread::Builder;
 use std::sync::atomic::Ordering;
 use std::net::SocketAddr;
 use std::collections::VecDeque;
@@ -48,7 +48,7 @@ pub trait DnsServer {
     ///
     /// This method should _NOT_ block. Rather, servers are expected to spawn a new
     /// thread to handle requests and return immediately.
-    fn run_server(self) -> bool;
+    fn run_server(self) -> Result<()>;
 }
 
 /// Utility function for resolving domains referenced in for example CNAME or SRV
@@ -68,7 +68,7 @@ fn resolve_cnames(lookup_list: &[DnsRecord],
             DnsRecord::CNAME { ref host, .. } |
             DnsRecord::SRV { ref host, .. } => {
                 if let Ok(result2) = resolver.resolve(host,
-                                                      &QueryType::A,
+                                                      QueryType::A,
                                                       true) {
 
                     let new_unmatched = result2.get_unresolved_cnames();
@@ -112,11 +112,11 @@ pub fn execute_query(context: Arc<ServerContext>, request: &DnsPacket) -> DnsPac
 
         let mut resolver = context.create_resolver(context.clone());
         let rescode = match resolver.resolve(&question.name,
-                                             &question.qtype,
+                                             question.qtype,
                                              request.header.recursion_desired) {
 
             Ok(result) => {
-                let rescode = result.header.rescode.clone();
+                let rescode = result.header.rescode;
 
                 let unmatched = result.get_unresolved_cnames();
                 results.push(result);
@@ -178,19 +178,13 @@ impl DnsServer for DnsUdpServer {
     ///
     /// This method takes ownership of the server, preventing the method from
     /// being called multiple times.
-    fn run_server(self) -> bool {
+    fn run_server(self) -> Result<()> {
 
         // Bind the socket
-        let socket = match UdpSocket::bind(("0.0.0.0", self.context.dns_port)) {
-            Ok(x) => x,
-            Err(e) => {
-                println!("Failed to start UDP DNS server: {:?}", e);
-                return false;
-            }
-        };
+        let socket = try!(UdpSocket::bind(("0.0.0.0", self.context.dns_port)));
 
         // Spawn threads for handling requests
-        for _ in 0..self.thread_count {
+        for thread_id in 0..self.thread_count {
             let socket_clone = match socket.try_clone() {
                 Ok(x) => x,
                 Err(e) => {
@@ -203,7 +197,8 @@ impl DnsServer for DnsUdpServer {
             let request_cond = self.request_cond.clone();
             let request_queue = self.request_queue.clone();
 
-            spawn(move || {
+            let name = "DnsUdpServer-request-".to_string() + &thread_id.to_string();
+            let _ = try!(Builder::new().name(name).spawn(move || {
                 loop {
 
                     // Acquire lock, and wait on the condition until data is
@@ -240,11 +235,11 @@ impl DnsServer for DnsUdpServer {
                     let data = return_or_report!(res_buffer.get_range(0, len), "Failed to get buffer data");
                     ignore_or_report!(socket_clone.send_to(data, src), "Failed to send response packet");
                 }
-            });
+            }));
         }
 
         // Start servicing requests
-        spawn(move || {
+        let _ = try!(Builder::new().name("DnsUdpServer-incoming".into()).spawn(move || {
             loop {
                 let _ = self.context.statistics.udp_query_count.fetch_add(1, Ordering::Release);
 
@@ -279,9 +274,9 @@ impl DnsServer for DnsUdpServer {
                     }
                 }
             }
-        });
+        }));
 
-        true
+        Ok(())
     }
 }
 
@@ -303,23 +298,18 @@ impl DnsTcpServer {
 }
 
 impl DnsServer for DnsTcpServer {
-    fn run_server(mut self) -> bool {
-        let socket = match TcpListener::bind(("0.0.0.0", self.context.dns_port)) {
-            Ok(x) => x,
-            Err(e) => {
-                println!("Failed to bind TCP socket on port {}: {:?}", self.context.dns_port, e);
-                return false;
-            }
-        };
+    fn run_server(mut self) -> Result<()> {
+        let socket = try!(TcpListener::bind(("0.0.0.0", self.context.dns_port)));
 
         // Spawn threads for handling requests, and create the channels
-        for _ in 0..self.thread_count {
+        for thread_id in 0..self.thread_count {
             let (tx, rx) = channel();
             self.senders.push(tx);
 
             let context = self.context.clone();
 
-            spawn(move || {
+            let name = "DnsTcpServer-request-".to_string() + &thread_id.to_string();
+            let _ = try!(Builder::new().name(name).spawn(move || {
                 loop {
                     let mut stream = match rx.recv() {
                         Ok(x) => x,
@@ -355,10 +345,10 @@ impl DnsServer for DnsTcpServer {
 
                     ignore_or_report!(stream.shutdown(Shutdown::Both), "Failed to shutdown socket");
                 }
-            });
+            }));
         }
 
-        spawn(move || {
+        let _ = try!(Builder::new().name("DnsTcpServer-incoming".into()).spawn(move || {
             for wrap_stream in socket.incoming() {
                 let stream = match wrap_stream {
                     Ok(stream) => stream,
@@ -377,9 +367,9 @@ impl DnsServer for DnsTcpServer {
                     }
                 }
             }
-        });
+        }));
 
-        true
+        Ok(())
     }
 }
 
@@ -397,11 +387,11 @@ mod tests {
     use dns::context::ResolveStrategy;
     use dns::context::tests::create_test_context;
 
-    fn build_query(qname: &str, qtype: &QueryType) -> DnsPacket {
+    fn build_query(qname: &str, qtype: QueryType) -> DnsPacket {
         let mut query_packet = DnsPacket::new();
         query_packet.header.recursion_desired = true;
 
-        query_packet.questions.push(DnsQuestion::new(qname.to_string(), qtype.clone()));
+        query_packet.questions.push(DnsQuestion::new(qname.into(), qtype));
 
         query_packet
     }
@@ -463,7 +453,7 @@ mod tests {
         // A successful resolve
         {
             let res = execute_query(context.clone(),
-                                    &build_query("google.com", &QueryType::A));
+                                    &build_query("google.com", QueryType::A));
             assert_eq!(1, res.answers.len());
 
             match res.answers[0] {
@@ -477,7 +467,7 @@ mod tests {
         // A successful resolve, that also resolves a CNAME without recursive lookup
         {
             let res = execute_query(context.clone(),
-                                    &build_query("www.facebook.com", &QueryType::CNAME));
+                                    &build_query("www.facebook.com", QueryType::CNAME));
             assert_eq!(2, res.answers.len());
 
             match res.answers[0] {
@@ -498,7 +488,7 @@ mod tests {
         // A successful resolve, that also resolves a CNAME through recursive lookup
         {
             let res = execute_query(context.clone(),
-                                    &build_query("www.microsoft.com", &QueryType::CNAME));
+                                    &build_query("www.microsoft.com", QueryType::CNAME));
             assert_eq!(2, res.answers.len());
 
             match res.answers[0] {
@@ -519,7 +509,7 @@ mod tests {
         // An unsuccessful resolve, but without any error
         {
             let res = execute_query(context.clone(),
-                                    &build_query("yahoo.com", &QueryType::A));
+                                    &build_query("yahoo.com", QueryType::A));
             assert_eq!(ResultCode::NXDOMAIN, res.header.rescode);
             assert_eq!(0, res.answers.len());
         };
@@ -536,7 +526,7 @@ mod tests {
         // no longer allowed
         {
             let res = execute_query(context.clone(),
-                                    &build_query("yahoo.com", &QueryType::A));
+                                    &build_query("yahoo.com", QueryType::A));
             assert_eq!(ResultCode::REFUSED, res.header.rescode);
             assert_eq!(0, res.answers.len());
         };
@@ -569,7 +559,7 @@ mod tests {
         // We expect this to set the server failure rescode
         {
             let res = execute_query(context2.clone(),
-                                    &build_query("yahoo.com", &QueryType::A));
+                                    &build_query("yahoo.com", QueryType::A));
             assert_eq!(ResultCode::SERVFAIL, res.header.rescode);
             assert_eq!(0, res.answers.len());
         };

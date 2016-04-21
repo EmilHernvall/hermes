@@ -17,7 +17,7 @@ use dns::buffer::{PacketBuffer, VectorPacketBuffer};
 /// id of an unknown query when compiling the reply. An integer can be converted
 /// to a querytype using the `from_num` function, and back to an integer using
 /// the `to_num` method.
-#[derive(PartialEq,Eq,Debug,Clone,Hash)]
+#[derive(PartialEq,Eq,Debug,Clone,Hash,Copy)]
 pub enum QueryType {
     UNKNOWN(u16),
     A, // 1
@@ -63,7 +63,7 @@ impl QueryType {
     }
 }
 
-#[derive(Clone,Debug,Eq,Ord)]
+#[derive(Copy,Clone,Debug,Eq,Ord)]
 pub struct TransientTtl(pub u32);
 
 impl PartialEq<TransientTtl> for TransientTtl {
@@ -504,7 +504,7 @@ impl DnsRecord {
 }
 
 /// The result code for a DNS query, as described in the specification
-#[derive(Clone,Debug,PartialEq,Eq)]
+#[derive(Copy,Clone,Debug,PartialEq,Eq)]
 pub enum ResultCode {
     NOERROR = 0,
     FORMERR = 1,

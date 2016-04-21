@@ -65,16 +65,16 @@ impl DomainEntry {
         }
     }
 
-    pub fn store_nxdomain(&mut self, qtype: &QueryType, ttl: u32) {
+    pub fn store_nxdomain(&mut self, qtype: QueryType, ttl: u32) {
         self.updates += 1;
 
         let new_set = RecordSet::NoRecords {
-            qtype: qtype.clone(),
+            qtype: qtype,
             ttl: ttl,
             timestamp: Local::now()
         };
 
-        self.record_types.insert(qtype.clone(), new_set);
+        self.record_types.insert(qtype, new_set);
     }
 
     pub fn store_record(&mut self, rec: &DnsRecord) {
@@ -107,8 +107,8 @@ impl DomainEntry {
         self.record_types.insert(rec.get_querytype(), new_set);
     }
 
-    pub fn get_cache_state(&self, qtype: &QueryType) -> CacheState {
-        match self.record_types.get(qtype) {
+    pub fn get_cache_state(&self, qtype: QueryType) -> CacheState {
+        match self.record_types.get(&qtype) {
             Some(&RecordSet::Records { ref records, .. }) => {
                 let now = Local::now();
 
@@ -120,7 +120,7 @@ impl DomainEntry {
                         continue;
                     }
 
-                    if entry.record.get_querytype() == *qtype {
+                    if entry.record.get_querytype() == qtype {
                         valid_count += 1;
                     }
                 }
@@ -147,12 +147,12 @@ impl DomainEntry {
     }
 
     pub fn fill_queryresult(&self,
-                            qtype: &QueryType,
+                            qtype: QueryType,
                             result_vec: &mut Vec<DnsRecord>) {
 
         let now = Local::now();
 
-        let current_set = match self.record_types.get(qtype) {
+        let current_set = match self.record_types.get(&qtype) {
             Some(x) => x,
             None => return
         };
@@ -165,7 +165,7 @@ impl DomainEntry {
                     continue;
                 }
 
-                if entry.record.get_querytype() == *qtype {
+                if entry.record.get_querytype() == qtype {
                     result_vec.push(entry.record.clone());
                 }
             }
@@ -187,7 +187,7 @@ impl Cache {
 
     fn get_cache_state(&mut self,
                        qname: &str,
-                       qtype: &QueryType) -> CacheState {
+                       qtype: QueryType) -> CacheState {
 
         match self.domain_entries.get(qname) {
             Some(x) => x.get_cache_state(qtype),
@@ -197,7 +197,7 @@ impl Cache {
 
     fn fill_queryresult(&mut self,
                         qname: &str,
-                        qtype: &QueryType,
+                        qtype: QueryType,
                         result_vec: &mut Vec<DnsRecord>,
                         increment_stats: bool) {
 
@@ -213,13 +213,13 @@ impl Cache {
 
     pub fn lookup(&mut self,
                   qname: &str,
-                  qtype: &QueryType) -> Option<DnsPacket> {
+                  qtype: QueryType) -> Option<DnsPacket> {
 
         match self.get_cache_state(qname, qtype) {
             CacheState::PositiveCache => {
                 let mut qr = DnsPacket::new();
                 self.fill_queryresult(qname, qtype, &mut qr.answers, true);
-                self.fill_queryresult(qname, &QueryType::NS, &mut qr.authorities, false);
+                self.fill_queryresult(qname, QueryType::NS, &mut qr.authorities, false);
 
                 Some(qr)
             },
@@ -254,7 +254,7 @@ impl Cache {
         }
     }
 
-    pub fn store_nxdomain(&mut self, qname: &str, qtype: &QueryType, ttl: u32) {
+    pub fn store_nxdomain(&mut self, qname: &str, qtype: QueryType, ttl: u32) {
         if let Some(ref mut rs) = self.domain_entries.get_mut(qname)
             .and_then(Arc::get_mut) {
 
@@ -297,7 +297,7 @@ impl SynchronizedCache {
 
     pub fn lookup(&self,
                   qname: &str,
-                  qtype: &QueryType) -> Option<DnsPacket> {
+                  qtype: QueryType) -> Option<DnsPacket> {
 
         let mut cache = match self.cache.write() {
             Ok(x) => x,
@@ -320,7 +320,7 @@ impl SynchronizedCache {
 
     pub fn store_nxdomain(&self,
                           qname: &str,
-                          qtype: &QueryType,
+                          qtype: QueryType,
                           ttl: u32) -> Result<()> {
 
         let mut cache = match self.cache.write() {
@@ -346,23 +346,23 @@ mod tests {
         let mut cache = Cache::new();
 
         // Verify that no data is returned when nothing is present
-        if cache.lookup("www.google.com", &QueryType::A).is_some() {
+        if cache.lookup("www.google.com", QueryType::A).is_some() {
             panic!()
         }
 
         // Register a negative cache entry
-        cache.store_nxdomain("www.google.com", &QueryType::A, 3600);
+        cache.store_nxdomain("www.google.com", QueryType::A, 3600);
 
         // Verify that we get a response, with the NXDOMAIN flag set
-        if let Some(packet) = cache.lookup("www.google.com", &QueryType::A) {
+        if let Some(packet) = cache.lookup("www.google.com", QueryType::A) {
             assert_eq!(ResultCode::NXDOMAIN, packet.header.rescode);
         }
 
         // Register a negative cache entry with no TTL
-        cache.store_nxdomain("www.yahoo.com", &QueryType::A, 0);
+        cache.store_nxdomain("www.yahoo.com", QueryType::A, 0);
 
         // And check that no such result is actually returned, since it's expired
-        if cache.lookup("www.yahoo.com", &QueryType::A).is_some() {
+        if cache.lookup("www.yahoo.com", QueryType::A).is_some() {
             panic!()
         }
 
@@ -387,26 +387,26 @@ mod tests {
         cache.store(&records);
 
         // Test for successful lookup
-        if let Some(packet) = cache.lookup("www.google.com", &QueryType::A) {
+        if let Some(packet) = cache.lookup("www.google.com", QueryType::A) {
             assert_eq!(records[0], packet.answers[0]);
         } else {
             panic!();
         }
 
         // Test for failed lookup, since no CNAME's are known for this domain
-        if cache.lookup("www.google.com", &QueryType::CNAME).is_some() {
+        if cache.lookup("www.google.com", QueryType::CNAME).is_some() {
             panic!();
         }
 
         // Check for successful CNAME lookup
-        if let Some(packet) = cache.lookup("www.microsoft.com", &QueryType::CNAME) {
+        if let Some(packet) = cache.lookup("www.microsoft.com", QueryType::CNAME) {
             assert_eq!(records[2], packet.answers[0]);
         } else {
             panic!();
         }
 
         // This lookup should fail, since it has expired due to the 0 second TTL
-        if cache.lookup("www.yahoo.com", &QueryType::A).is_some() {
+        if cache.lookup("www.yahoo.com", QueryType::A).is_some() {
             panic!();
         }
 
@@ -420,7 +420,7 @@ mod tests {
         cache.store(&records2);
 
         // And now it should succeed, since the record has been store
-        if !cache.lookup("www.yahoo.com", &QueryType::A).is_some() {
+        if !cache.lookup("www.yahoo.com", QueryType::A).is_some() {
             panic!();
         }
 

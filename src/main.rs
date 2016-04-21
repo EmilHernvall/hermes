@@ -101,15 +101,15 @@ fn main() {
     // Start DNS servers
     if context.enable_udp {
         let udp_server = DnsUdpServer::new(context.clone(), 20);
-        if !udp_server.run_server() {
-            println!("Failed to bind UDP listener");
+        if let Err(e) = udp_server.run_server() {
+            println!("Failed to bind UDP listener: {:?}", e);
         }
     }
 
     if context.enable_tcp {
         let tcp_server = DnsTcpServer::new(context.clone(), 20);
-        if !tcp_server.run_server() {
-            println!("Failed to bind TCP listener");
+        if let Err(e) = tcp_server.run_server() {
+            println!("Failed to bind TCP listener: {:?}", e);
         }
     }
 

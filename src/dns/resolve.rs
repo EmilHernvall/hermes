@@ -16,10 +16,10 @@ pub trait DnsResolver {
 
     fn resolve(&mut self,
                qname: &str,
-               qtype: &QueryType,
+               qtype: QueryType,
                recursive: bool) -> Result<DnsPacket> {
 
-        if let QueryType::UNKNOWN(_) = *qtype {
+        if let QueryType::UNKNOWN(_) = qtype {
             let mut packet = DnsPacket::new();
             packet.header.rescode = ResultCode::NOTIMP;
             return Ok(packet);
@@ -41,8 +41,8 @@ pub trait DnsResolver {
             return Ok(qr);
         }
 
-        if *qtype == QueryType::A || *qtype == QueryType::AAAA {
-            if let Some(qr) = context.cache.lookup(qname, &QueryType::CNAME) {
+        if qtype == QueryType::A || qtype == QueryType::AAAA {
+            if let Some(qr) = context.cache.lookup(qname, QueryType::CNAME) {
                 return Ok(qr);
             }
         }
@@ -50,7 +50,7 @@ pub trait DnsResolver {
         self.perform(qname, qtype)
     }
 
-    fn perform(&mut self, qname: &str, qtype: &QueryType) -> Result<DnsPacket>;
+    fn perform(&mut self, qname: &str, qtype: QueryType) -> Result<DnsPacket>;
 }
 
 /// A Forwarding DNS Resolver
@@ -77,11 +77,11 @@ impl DnsResolver for ForwardingDnsResolver {
 
     fn perform(&mut self,
                qname: &str,
-               qtype: &QueryType) -> Result<DnsPacket> {
+               qtype: QueryType) -> Result<DnsPacket> {
 
         let &(ref host, port) = &self.server;
         let result = self.context.client.send_query(qname,
-                                                    qtype.clone(),
+                                                    qtype,
                                                     (host.as_str(), port),
                                                     true);
 
@@ -115,7 +115,7 @@ impl DnsResolver for RecursiveDnsResolver {
 
     fn perform(&mut self,
                qname: &str,
-               qtype: &QueryType) -> Result<DnsPacket> {
+               qtype: QueryType) -> Result<DnsPacket> {
 
         // Find the closest name server by splitting the label and progessively
         // moving towards the root servers. I.e. check "google.com", then "com",
@@ -127,9 +127,9 @@ impl DnsResolver for RecursiveDnsResolver {
             let domain = labels[lbl_idx..].join(".");
 
             match self.context.cache
-                .lookup(&domain, &QueryType::NS)
+                .lookup(&domain, QueryType::NS)
                 .and_then(|qr| qr.get_unresolved_ns(&domain))
-                .and_then(|ns| self.context.cache.lookup(&ns, &QueryType::A))
+                .and_then(|ns| self.context.cache.lookup(&ns, QueryType::A))
                 .and_then(|qr| qr.get_random_a()) {
 
                 Some(addr) => {
@@ -169,7 +169,7 @@ impl DnsResolver for RecursiveDnsResolver {
 
             if response.header.rescode == ResultCode::NXDOMAIN {
                 if let Some(ttl) = response.get_ttl_from_soa() {
-                    let _ = self.context.cache.store_nxdomain(qname, &qtype, ttl);
+                    let _ = self.context.cache.store_nxdomain(qname, qtype, ttl);
                 }
                 return Ok(response.clone());
             }
@@ -194,7 +194,7 @@ impl DnsResolver for RecursiveDnsResolver {
 
             // Recursively resolve the NS
             let recursive_response = try!(self.resolve(&new_ns_name,
-                                                       &QueryType::A,
+                                                       QueryType::A,
                                                        true));
 
             // Pick a random IP and restart
@@ -252,7 +252,7 @@ mod tests {
 
         // First verify that we get a match back
         {
-            let res = match resolver.resolve("google.com", &QueryType::A, true) {
+            let res = match resolver.resolve("google.com", QueryType::A, true) {
                 Ok(x) => x,
                 Err(_) => panic!()
             };
@@ -270,7 +270,7 @@ mod tests {
         // Do the same lookup again, and verify that it's present in the cache
         // and that the counter has been updated
         {
-            let res = match resolver.resolve("google.com", &QueryType::A, true) {
+            let res = match resolver.resolve("google.com", QueryType::A, true) {
                 Ok(x) => x,
                 Err(_) => panic!()
             };
@@ -292,7 +292,7 @@ mod tests {
 
         // Do a failed lookup
         {
-            let res = match resolver.resolve("yahoo.com", &QueryType::A, true) {
+            let res = match resolver.resolve("yahoo.com", QueryType::A, true) {
                 Ok(x) => x,
                 Err(_) => panic!()
             };
@@ -315,7 +315,7 @@ mod tests {
         let mut resolver = context.create_resolver(context.clone());
 
         // Expect failure when no name servers are available
-        if let Ok(_) = resolver.resolve("google.com", &QueryType::A, true) {
+        if let Ok(_) = resolver.resolve("google.com", QueryType::A, true) {
             panic!();
         }
     }
@@ -332,7 +332,7 @@ mod tests {
         let mut resolver = context.create_resolver(context.clone());
 
         // Expect failure when no name servers are available
-        if let Ok(_) = resolver.resolve("google.com", &QueryType::A, true) {
+        if let Ok(_) = resolver.resolve("google.com", QueryType::A, true) {
             panic!();
         }
 
@@ -346,7 +346,7 @@ mod tests {
 
         let _ = context.cache.store(&nameservers);
 
-        if let Ok(_) = resolver.resolve("google.com", &QueryType::A, true) {
+        if let Ok(_) = resolver.resolve("google.com", QueryType::A, true) {
             panic!();
         }
     }
@@ -399,7 +399,7 @@ mod tests {
         let mut resolver = context.create_resolver(context.clone());
 
         // Expect failure when no name servers are available
-        if let Ok(_) = resolver.resolve("google.com", &QueryType::A, true) {
+        if let Ok(_) = resolver.resolve("google.com", QueryType::A, true) {
             panic!();
         }
 
@@ -420,7 +420,7 @@ mod tests {
             let _ = context.cache.store(&nameservers);
         }
 
-        match resolver.resolve("google.com", &QueryType::A, true) {
+        match resolver.resolve("google.com", QueryType::A, true) {
             Ok(packet) => {
                 assert_eq!(1, packet.header.id);
             },
@@ -444,7 +444,7 @@ mod tests {
             let _ = context.cache.store(&nameservers);
         }
 
-        match resolver.resolve("google.com", &QueryType::A, true) {
+        match resolver.resolve("google.com", QueryType::A, true) {
             Ok(packet) => {
                 assert_eq!(2, packet.header.id);
             },
@@ -468,7 +468,7 @@ mod tests {
             let _ = context.cache.store(&nameservers);
         }
 
-        match resolver.resolve("google.com", &QueryType::A, true) {
+        match resolver.resolve("google.com", QueryType::A, true) {
             Ok(packet) => {
                 assert_eq!(3, packet.header.id);
             },
@@ -527,7 +527,7 @@ mod tests {
         // Check that we can successfully resolve
         {
             let res = match resolver.resolve("google.com",
-                                             &QueryType::A,
+                                             QueryType::A,
                                              true) {
                 Ok(x) => x,
                 Err(_) => panic!()
@@ -546,7 +546,7 @@ mod tests {
         // And that we won't find anything for a domain that isn't present
         {
             let res = match resolver.resolve("foobar.google.com",
-                                             &QueryType::A,
+                                             QueryType::A,
                                              true) {
                 Ok(x) => x,
                 Err(_) => panic!()
@@ -559,7 +559,7 @@ mod tests {
         // Perform another successful query, that should hit the cache
         {
             let res = match resolver.resolve("google.com",
-                                             &QueryType::A,
+                                             QueryType::A,
                                              true) {
                 Ok(x) => x,
                 Err(_) => panic!()
