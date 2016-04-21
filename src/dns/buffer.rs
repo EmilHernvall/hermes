@@ -244,6 +244,7 @@ impl<'a, T> PacketBuffer for StreamPacketBuffer<'a, T> where T: Read + 'a {
     }
 
     fn save_label(&mut self, _: &str, _: usize) {
+        unimplemented!();
     }
 
     fn read(&mut self) -> Result<u8> {
@@ -280,13 +281,11 @@ impl<'a, T> PacketBuffer for StreamPacketBuffer<'a, T> where T: Read + 'a {
     }
 
     fn write(&mut self, _: u8) -> Result<()> {
-        Ok(())
+        unimplemented!();
     }
 
-    fn set(&mut self, pos: usize, val: u8) -> Result<()> {
-        self.buffer[pos] = val;
-
-        Ok(())
+    fn set(&mut self, _: usize, _: u8) -> Result<()> {
+        unimplemented!();
     }
 
     fn pos(&self) -> usize {

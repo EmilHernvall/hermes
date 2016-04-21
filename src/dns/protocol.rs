@@ -691,9 +691,9 @@ impl DnsQuestion {
     }
 
     pub fn read<T: PacketBuffer>(&mut self, buffer: &mut T) -> Result<()> {
-        let _ = buffer.read_qname(&mut self.name);
+        try!(buffer.read_qname(&mut self.name));
         self.qtype = QueryType::from_num(try!(buffer.read_u16())); // qtype
-        let _ = buffer.read_u16(); // class
+        let _ = try!(buffer.read_u16()); // class
 
         Ok(())
     }
@@ -763,7 +763,12 @@ impl DnsPacket {
 
     #[allow(dead_code)]
     pub fn print(&self) {
-        //println!("query domain: {0}", self.domain);
+        println!("{}", self.header);
+
+        println!("questions:");
+        for x in &self.questions {
+            println!("\t{:?}", x);
+        }
 
         println!("answers:");
         for x in &self.answers {
@@ -934,7 +939,6 @@ impl DnsPacket {
 mod tests {
 
     use super::*;
-    use std::net::Ipv4Addr;
     use dns::buffer::{PacketBuffer, VectorPacketBuffer};
 
     #[test]

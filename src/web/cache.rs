@@ -3,9 +3,8 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use regex::{Regex,Captures};
-use tiny_http::{Response, Header, HeaderField, Request};
+use tiny_http::{Response, Header, Request};
 //use chrono::*;
-use ascii::AsciiString;
 use rustc_serialize::json::{self, ToJson, Json};
 
 use dns::context::ServerContext;
@@ -138,8 +137,8 @@ impl Action for CacheAction {
 
             let mut response = Response::from_string(output);
             response.add_header(Header{
-                field: "Content-Type".parse::<HeaderField>().unwrap(),
-                value: "application/json".parse::<AsciiString>().unwrap()
+                field: "Content-Type".parse().unwrap(),
+                value: "application/json".parse().unwrap()
             });
             request.respond(response)
         } else {
@@ -155,8 +154,8 @@ impl Action for CacheAction {
 
             let mut response = Response::from_string(html_data);
             response.add_header(Header{
-                field: "Content-Type".parse::<HeaderField>().unwrap(),
-                value: "text/html".parse::<AsciiString>().unwrap()
+                field: "Content-Type".parse().unwrap(),
+                value: "text/html".parse().unwrap()
             });
             request.respond(response)
         }

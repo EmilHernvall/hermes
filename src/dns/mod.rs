@@ -8,3 +8,5 @@ pub mod protocol;
 pub mod resolve;
 pub mod server;
 pub mod context;
+
+mod netutil;

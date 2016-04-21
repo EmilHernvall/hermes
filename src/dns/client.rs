@@ -1,9 +1,8 @@
 //! client for sending DNS queries to other servers
 
-use std::io::Result;
-use std::io::{Error, ErrorKind};
+use std::io::{Result,Error,ErrorKind,Write};
 use std::marker::{Send, Sync};
-use std::net::UdpSocket;
+use std::net::{UdpSocket,TcpStream};
 use std::sync::mpsc::{channel, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread::{spawn,sleep};
@@ -12,8 +11,9 @@ use std::sync::atomic::{AtomicUsize,Ordering};
 
 use chrono::*;
 
-use dns::buffer::{PacketBuffer, BytePacketBuffer};
+use dns::buffer::{PacketBuffer, BytePacketBuffer, StreamPacketBuffer};
 use dns::protocol::{DnsPacket, DnsQuestion, QueryType};
+use dns::netutil::{read_packet_length, write_packet_length};
 
 pub trait DnsClient {
     fn get_sent_count(&self) -> usize;
@@ -239,12 +239,91 @@ impl DnsClient for DnsUdpClient {
     }
 }
 
+/// `DnsTcpClient` is a client for use when sending queries over TCP transport
+///
+/// This client is much simpler than DnsUdpClient, since the network stack takes
+/// care of things like packet ordering and isolation, which means that we don't
+/// have to maintain any state or do any synchronization for the duration of the
+/// request.
+#[derive(Default)]
+pub struct DnsTcpClient {
+
+    total_sent: AtomicUsize,
+    total_failed: AtomicUsize,
+
+    /// Counter for assigning packet ids
+    seq: AtomicUsize,
+}
+
+impl DnsTcpClient {
+    pub fn new() -> DnsTcpClient {
+        DnsTcpClient {
+            total_sent: AtomicUsize::new(0),
+            total_failed: AtomicUsize::new(0),
+            seq: AtomicUsize::new(0)
+        }
+    }
+}
+
+impl DnsClient for DnsTcpClient {
+
+    fn get_sent_count(&self) -> usize {
+        self.total_sent.load(Ordering::Acquire)
+    }
+
+    fn get_failed_count(&self) -> usize {
+        self.total_failed.load(Ordering::Acquire)
+    }
+
+    /// NOOP for `DnsTcpClient`
+    fn run(&self) -> Result<()> {
+        Ok(())
+    }
+
+    fn send_query(&self,
+                  qname: &str,
+                  qtype: QueryType,
+                  server: (&str, u16),
+                  recursive: bool) -> Result<DnsPacket> {
+
+        let _ = self.total_sent.fetch_add(1, Ordering::Release);
+
+        // Prepare request
+        let mut packet = DnsPacket::new();
+
+        packet.header.id = self.seq.fetch_add(1, Ordering::SeqCst) as u16;
+        if packet.header.id + 1 == 0xFFFF {
+            self.seq.compare_and_swap(0xFFFF, 0, Ordering::SeqCst);
+        }
+
+        packet.header.questions = 1;
+        packet.header.recursion_desired = recursive;
+
+        packet.questions.push(DnsQuestion::new(qname.into(), qtype));
+
+        // Send query
+        let mut req_buffer = BytePacketBuffer::new();
+        try!(packet.write(&mut req_buffer, 0xFFFF));
+
+        let mut socket = try!(TcpStream::connect(server));
+
+        try!(write_packet_length(&mut socket, req_buffer.pos()));
+        try!(socket.write(&req_buffer.buf[0..req_buffer.pos]));
+        try!(socket.flush());
+
+        let _ = try!(read_packet_length(&mut socket));
+
+        let mut stream_buffer = StreamPacketBuffer::new(&mut socket);
+        DnsPacket::from_buffer(&mut stream_buffer)
+    }
+}
+
 #[cfg(test)]
 pub mod tests {
 
     use std::io::Result;
 
-    use dns::protocol::{DnsPacket,QueryType};
+    use dns::protocol::{DnsPacket,QueryType,DnsRecord};
     use super::*;
 
     pub type StubCallback = Fn(&str, QueryType, (&str, u16), bool) -> Result<DnsPacket>;
@@ -285,6 +364,40 @@ pub mod tests {
                       recursive: bool) -> Result<DnsPacket> {
 
             (self.callback)(qname, qtype, server, recursive)
+        }
+    }
+
+    #[test]
+    pub fn test_udp_client() {
+        let client = DnsUdpClient::new(31456);
+        client.run().unwrap();
+
+        let res = client.send_query("google.com", QueryType::A, ("8.8.8.8", 53), true).unwrap();
+
+        assert_eq!(res.questions[0].name, "google.com");
+        assert!(res.answers.len() > 0);
+
+        match res.answers[0] {
+            DnsRecord::A { ref domain, .. } => {
+                assert_eq!("google.com", domain);
+            },
+            _ => panic!()
+        }
+    }
+
+    #[test]
+    pub fn test_tcp_client() {
+        let client = DnsTcpClient::new();
+        let res = client.send_query("google.com", QueryType::A, ("8.8.8.8", 53), true).unwrap();
+
+        assert_eq!(res.questions[0].name, "google.com");
+        assert!(res.answers.len() > 0);
+
+        match res.answers[0] {
+            DnsRecord::A { ref domain, .. } => {
+                assert_eq!("google.com", domain);
+            },
+            _ => panic!()
         }
     }
 }

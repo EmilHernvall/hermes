@@ -17,7 +17,7 @@ extern crate getopts;
 
 use std::env;
 use std::sync::Arc;
-use std::net::{Ipv4Addr, Ipv6Addr};
+use std::net::Ipv4Addr;
 
 use getopts::Options;
 
@@ -131,54 +131,54 @@ fn get_rootservers() -> Vec<DnsRecord>
     let mut rootservers = Vec::new();
 
     rootservers.push(DnsRecord::NS { domain: "".to_string(), host: "a.root-servers.net".to_string(), ttl: TransientTtl(3600000) });
-    rootservers.push(DnsRecord::A{ domain: "a.root-servers.net".to_string(), addr: "198.41.0.4".parse::<Ipv4Addr>().unwrap(),ttl: TransientTtl(3600000) });
-    rootservers.push(DnsRecord::AAAA { domain: "a.root-servers.net".to_string(), addr: "2001:503:ba3e::2:30".parse::<Ipv6Addr>().unwrap(), ttl: TransientTtl(3600000) });
+    rootservers.push(DnsRecord::A{ domain: "a.root-servers.net".to_string(), addr: "198.41.0.4".parse().unwrap(),ttl: TransientTtl(3600000) });
+    rootservers.push(DnsRecord::AAAA { domain: "a.root-servers.net".to_string(), addr: "2001:503:ba3e::2:30".parse().unwrap(), ttl: TransientTtl(3600000) });
 
     rootservers.push(DnsRecord::NS { domain: "".to_string(), host: "b.root-servers.net".to_string(), ttl: TransientTtl(3600000) });
-    rootservers.push(DnsRecord::A{ domain: "b.root-servers.net".to_string(), addr: "192.228.79.201".parse::<Ipv4Addr>().unwrap(),ttl: TransientTtl(3600000) });
-    rootservers.push(DnsRecord::AAAA { domain: "b.root-servers.net".to_string(), addr: "2001:500:84::b".parse::<Ipv6Addr>().unwrap(), ttl: TransientTtl(3600000) });
+    rootservers.push(DnsRecord::A{ domain: "b.root-servers.net".to_string(), addr: "192.228.79.201".parse().unwrap(),ttl: TransientTtl(3600000) });
+    rootservers.push(DnsRecord::AAAA { domain: "b.root-servers.net".to_string(), addr: "2001:500:84::b".parse().unwrap(), ttl: TransientTtl(3600000) });
 
     rootservers.push(DnsRecord::NS { domain: "".to_string(), host: "c.root-servers.net".to_string(), ttl: TransientTtl(3600000) });
-    rootservers.push(DnsRecord::A{ domain: "c.root-servers.net".to_string(), addr: "192.33.4.12".parse::<Ipv4Addr>().unwrap(),ttl: TransientTtl(3600000) });
-    rootservers.push(DnsRecord::AAAA { domain: "c.root-servers.net".to_string(), addr: "2001:500:2::c".parse::<Ipv6Addr>().unwrap(), ttl: TransientTtl(3600000) });
+    rootservers.push(DnsRecord::A{ domain: "c.root-servers.net".to_string(), addr: "192.33.4.12".parse().unwrap(),ttl: TransientTtl(3600000) });
+    rootservers.push(DnsRecord::AAAA { domain: "c.root-servers.net".to_string(), addr: "2001:500:2::c".parse().unwrap(), ttl: TransientTtl(3600000) });
 
     rootservers.push(DnsRecord::NS { domain: "".to_string(), host: "d.root-servers.net".to_string(), ttl: TransientTtl(3600000) });
-    rootservers.push(DnsRecord::A{ domain: "d.root-servers.net".to_string(), addr: "199.7.91.13".parse::<Ipv4Addr>().unwrap(),ttl: TransientTtl(3600000) });
-    rootservers.push(DnsRecord::AAAA { domain: "d.root-servers.net".to_string(), addr: "2001:500:2d::d".parse::<Ipv6Addr>().unwrap(), ttl: TransientTtl(3600000) });
+    rootservers.push(DnsRecord::A{ domain: "d.root-servers.net".to_string(), addr: "199.7.91.13".parse().unwrap(),ttl: TransientTtl(3600000) });
+    rootservers.push(DnsRecord::AAAA { domain: "d.root-servers.net".to_string(), addr: "2001:500:2d::d".parse().unwrap(), ttl: TransientTtl(3600000) });
 
     rootservers.push(DnsRecord::NS { domain: "".to_string(), host: "e.root-servers.net".to_string(), ttl: TransientTtl(3600000) });
-    rootservers.push(DnsRecord::A{ domain: "e.root-servers.net".to_string(), addr: "192.203.230.10".parse::<Ipv4Addr>().unwrap(),ttl: TransientTtl(3600000) });
+    rootservers.push(DnsRecord::A{ domain: "e.root-servers.net".to_string(), addr: "192.203.230.10".parse().unwrap(),ttl: TransientTtl(3600000) });
 
     rootservers.push(DnsRecord::NS { domain: "".to_string(), host: "f.root-servers.net".to_string(), ttl: TransientTtl(3600000) });
-    rootservers.push(DnsRecord::A{ domain: "f.root-servers.net".to_string(), addr: "192.5.5.241".parse::<Ipv4Addr>().unwrap(),ttl: TransientTtl(3600000) });
-    rootservers.push(DnsRecord::AAAA { domain: "f.root-servers.net".to_string(), addr: "2001:500:2f::f".parse::<Ipv6Addr>().unwrap(), ttl: TransientTtl(3600000) });
+    rootservers.push(DnsRecord::A{ domain: "f.root-servers.net".to_string(), addr: "192.5.5.241".parse().unwrap(),ttl: TransientTtl(3600000) });
+    rootservers.push(DnsRecord::AAAA { domain: "f.root-servers.net".to_string(), addr: "2001:500:2f::f".parse().unwrap(), ttl: TransientTtl(3600000) });
 
     rootservers.push(DnsRecord::NS { domain: "".to_string(),  host: "g.root-servers.net".to_string(), ttl: TransientTtl(3600000) });
-    rootservers.push(DnsRecord::A{ domain: "g.root-servers.net".to_string(), addr: "192.112.36.4".parse::<Ipv4Addr>().unwrap(),ttl: TransientTtl(3600000) });
+    rootservers.push(DnsRecord::A{ domain: "g.root-servers.net".to_string(), addr: "192.112.36.4".parse().unwrap(),ttl: TransientTtl(3600000) });
 
     rootservers.push(DnsRecord::NS { domain: "".to_string(), host: "h.root-servers.net".to_string(), ttl: TransientTtl(3600000) });
-    rootservers.push(DnsRecord::A{ domain: "h.root-servers.net".to_string(), addr: "198.97.190.53".parse::<Ipv4Addr>().unwrap(),ttl: TransientTtl(3600000) });
-    rootservers.push(DnsRecord::AAAA { domain: "h.root-servers.net".to_string(), addr: "2001:500:1::53".parse::<Ipv6Addr>().unwrap(), ttl: TransientTtl(3600000) });
+    rootservers.push(DnsRecord::A{ domain: "h.root-servers.net".to_string(), addr: "198.97.190.53".parse().unwrap(),ttl: TransientTtl(3600000) });
+    rootservers.push(DnsRecord::AAAA { domain: "h.root-servers.net".to_string(), addr: "2001:500:1::53".parse().unwrap(), ttl: TransientTtl(3600000) });
 
     rootservers.push(DnsRecord::NS { domain: "".to_string(), host: "i.root-servers.net".to_string(), ttl: TransientTtl(3600000) });
-    rootservers.push(DnsRecord::A{ domain: "i.root-servers.net".to_string(), addr: "192.36.148.17".parse::<Ipv4Addr>().unwrap(),ttl: TransientTtl(3600000) });
-    rootservers.push(DnsRecord::AAAA { domain: "i.root-servers.net".to_string(), addr: "2001:7fe::53".parse::<Ipv6Addr>().unwrap(), ttl: TransientTtl(3600000) });
+    rootservers.push(DnsRecord::A{ domain: "i.root-servers.net".to_string(), addr: "192.36.148.17".parse().unwrap(),ttl: TransientTtl(3600000) });
+    rootservers.push(DnsRecord::AAAA { domain: "i.root-servers.net".to_string(), addr: "2001:7fe::53".parse().unwrap(), ttl: TransientTtl(3600000) });
 
     rootservers.push(DnsRecord::NS { domain: "".to_string(), host: "j.root-servers.net".to_string(), ttl: TransientTtl(3600000) });
-    rootservers.push(DnsRecord::A{ domain: "j.root-servers.net".to_string(), addr: "192.58.128.30".parse::<Ipv4Addr>().unwrap(),ttl: TransientTtl(3600000) });
-    rootservers.push(DnsRecord::AAAA { domain: "j.root-servers.net".to_string(), addr: "2001:503:c27::2:30".parse::<Ipv6Addr>().unwrap(), ttl: TransientTtl(3600000) });
+    rootservers.push(DnsRecord::A{ domain: "j.root-servers.net".to_string(), addr: "192.58.128.30".parse().unwrap(),ttl: TransientTtl(3600000) });
+    rootservers.push(DnsRecord::AAAA { domain: "j.root-servers.net".to_string(), addr: "2001:503:c27::2:30".parse().unwrap(), ttl: TransientTtl(3600000) });
 
     rootservers.push(DnsRecord::NS { domain: "".to_string(), host: "k.root-servers.net".to_string(), ttl: TransientTtl(3600000) });
-    rootservers.push(DnsRecord::A{ domain: "k.root-servers.net".to_string(), addr: "193.0.14.129".parse::<Ipv4Addr>().unwrap(),ttl: TransientTtl(3600000) });
-    rootservers.push(DnsRecord::AAAA { domain: "k.root-servers.net".to_string(), addr: "2001:7fd::1".parse::<Ipv6Addr>().unwrap(), ttl: TransientTtl(3600000) });
+    rootservers.push(DnsRecord::A{ domain: "k.root-servers.net".to_string(), addr: "193.0.14.129".parse().unwrap(),ttl: TransientTtl(3600000) });
+    rootservers.push(DnsRecord::AAAA { domain: "k.root-servers.net".to_string(), addr: "2001:7fd::1".parse().unwrap(), ttl: TransientTtl(3600000) });
 
     rootservers.push(DnsRecord::NS { domain: "".to_string(), host: "l.root-servers.net".to_string(), ttl: TransientTtl(3600000) });
-    rootservers.push(DnsRecord::A{ domain: "l.root-servers.net".to_string(), addr: "199.7.83.42".parse::<Ipv4Addr>().unwrap(),ttl: TransientTtl(3600000) });
-    rootservers.push(DnsRecord::AAAA { domain: "l.root-servers.net".to_string(), addr: "2001:500:3::42".parse::<Ipv6Addr>().unwrap(), ttl: TransientTtl(3600000) });
+    rootservers.push(DnsRecord::A{ domain: "l.root-servers.net".to_string(), addr: "199.7.83.42".parse().unwrap(),ttl: TransientTtl(3600000) });
+    rootservers.push(DnsRecord::AAAA { domain: "l.root-servers.net".to_string(), addr: "2001:500:3::42".parse().unwrap(), ttl: TransientTtl(3600000) });
 
     rootservers.push(DnsRecord::NS { domain: "".to_string(), host: "m.root-servers.net".to_string(), ttl: TransientTtl(3600000) });
-    rootservers.push(DnsRecord::A{ domain: "m.root-servers.net".to_string(), addr: "202.12.27.33".parse::<Ipv4Addr>().unwrap(),ttl: TransientTtl(3600000) });
-    rootservers.push(DnsRecord::AAAA { domain: "m.root-servers.net".to_string(), addr: "2001:dc3::35".parse::<Ipv6Addr>().unwrap(), ttl: TransientTtl(3600000) });
+    rootservers.push(DnsRecord::A{ domain: "m.root-servers.net".to_string(), addr: "202.12.27.33".parse().unwrap(),ttl: TransientTtl(3600000) });
+    rootservers.push(DnsRecord::AAAA { domain: "m.root-servers.net".to_string(), addr: "2001:dc3::35".parse().unwrap(), ttl: TransientTtl(3600000) });
 
     rootservers
 }

@@ -211,7 +211,6 @@ impl DnsResolver for RecursiveDnsResolver {
 mod tests {
 
     use std::sync::Arc;
-    use std::net::Ipv4Addr;
 
     use dns::protocol::{DnsPacket, QueryType, DnsRecord, ResultCode, TransientTtl};
 
@@ -229,7 +228,7 @@ mod tests {
                 if qname == "google.com" {
                     packet.answers.push(DnsRecord::A {
                         domain: "google.com".to_string(),
-                        addr: "127.0.0.1".parse::<Ipv4Addr>().unwrap(),
+                        addr: "127.0.0.1".parse().unwrap(),
                         ttl: TransientTtl(3600)
                     });
                 } else {
@@ -363,7 +362,7 @@ mod tests {
 
                     packet.answers.push(DnsRecord::A {
                         domain: "a.google.com".to_string(),
-                        addr: "127.0.0.1".parse::<Ipv4Addr>().unwrap(),
+                        addr: "127.0.0.1".parse().unwrap(),
                         ttl: TransientTtl(3600)
                     });
 
@@ -374,7 +373,7 @@ mod tests {
 
                     packet.answers.push(DnsRecord::A {
                         domain: "b.google.com".to_string(),
-                        addr: "127.0.0.1".parse::<Ipv4Addr>().unwrap(),
+                        addr: "127.0.0.1".parse().unwrap(),
                         ttl: TransientTtl(3600)
                     });
 
@@ -385,7 +384,7 @@ mod tests {
 
                     packet.answers.push(DnsRecord::A {
                         domain: "c.google.com".to_string(),
-                        addr: "127.0.0.1".parse::<Ipv4Addr>().unwrap(),
+                        addr: "127.0.0.1".parse().unwrap(),
                         ttl: TransientTtl(3600)
                     });
 
@@ -414,7 +413,7 @@ mod tests {
             });
             nameservers.push(DnsRecord::A {
                 domain: "a.myroot.net".to_string(),
-                addr: "127.0.0.1".parse::<Ipv4Addr>().unwrap(),
+                addr: "127.0.0.1".parse().unwrap(),
                 ttl: TransientTtl(3600)
             });
 
@@ -438,7 +437,7 @@ mod tests {
             });
             nameservers.push(DnsRecord::A {
                 domain: "a.mytld.net".to_string(),
-                addr: "127.0.0.2".parse::<Ipv4Addr>().unwrap(),
+                addr: "127.0.0.2".parse().unwrap(),
                 ttl: TransientTtl(3600)
             });
 
@@ -462,7 +461,7 @@ mod tests {
             });
             nameservers.push(DnsRecord::A {
                 domain: "ns1.google.com".to_string(),
-                addr: "127.0.0.3".parse::<Ipv4Addr>().unwrap(),
+                addr: "127.0.0.3".parse().unwrap(),
                 ttl: TransientTtl(3600)
             });
 
@@ -486,7 +485,7 @@ mod tests {
                 if qname == "google.com" {
                     packet.answers.push(DnsRecord::A {
                         domain: "google.com".to_string(),
-                        addr: "127.0.0.1".parse::<Ipv4Addr>().unwrap(),
+                        addr: "127.0.0.1".parse().unwrap(),
                         ttl: TransientTtl(3600)
                     });
                 } else {
@@ -519,7 +518,7 @@ mod tests {
         });
         nameservers.push(DnsRecord::A {
             domain: "ns1.google.com".to_string(),
-            addr: "127.0.0.1".parse::<Ipv4Addr>().unwrap(),
+            addr: "127.0.0.1".parse().unwrap(),
             ttl: TransientTtl(3600)
         });
 

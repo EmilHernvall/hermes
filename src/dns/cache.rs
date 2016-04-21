@@ -339,8 +339,6 @@ mod tests {
 
     use super::*;
 
-    use std::net::Ipv4Addr;
-
     use dns::protocol::{DnsRecord, QueryType, ResultCode, TransientTtl};
 
     #[test]
@@ -372,12 +370,12 @@ mod tests {
         let mut records = Vec::new();
         records.push(DnsRecord::A {
             domain: "www.google.com".to_string(),
-            addr: "127.0.0.1".parse::<Ipv4Addr>().unwrap(),
+            addr: "127.0.0.1".parse().unwrap(),
             ttl: TransientTtl(3600)
         });
         records.push(DnsRecord::A {
             domain: "www.yahoo.com".to_string(),
-            addr: "127.0.0.2".parse::<Ipv4Addr>().unwrap(),
+            addr: "127.0.0.2".parse().unwrap(),
             ttl: TransientTtl(0)
         });
         records.push(DnsRecord::CNAME {
@@ -415,7 +413,7 @@ mod tests {
         let mut records2 = Vec::new();
         records2.push(DnsRecord::A {
             domain: "www.yahoo.com".to_string(),
-            addr: "127.0.0.2".parse::<Ipv4Addr>().unwrap(),
+            addr: "127.0.0.2".parse().unwrap(),
             ttl: TransientTtl(3600)
         });
 

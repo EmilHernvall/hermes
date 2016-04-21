@@ -222,8 +222,8 @@ impl Action for AuthorityAction {
 
                     let mut response = Response::from_string(output);
                     response.add_header(Header{
-                        field: "Content-Type".parse::<HeaderField>().unwrap(),
-                        value: "application/json".parse::<AsciiString>().unwrap()
+                        field: "Content-Type".parse().unwrap(),
+                        value: "application/json".parse().unwrap()
                     });
                     return request.respond(response);
                 } else {
@@ -234,8 +234,8 @@ impl Action for AuthorityAction {
 
                     let mut response = Response::from_string(html_data);
                     response.add_header(Header{
-                        field: "Content-Type".parse::<HeaderField>().unwrap(),
-                        value: "text/html".parse::<AsciiString>().unwrap()
+                        field: "Content-Type".parse().unwrap(),
+                        value: "text/html".parse().unwrap()
                     });
                     return request.respond(response);
                 }
@@ -275,8 +275,8 @@ impl Action for AuthorityAction {
 
                 let mut response = Response::empty(StatusCode(201));
                 response.add_header(Header{
-                    field: "Refresh".parse::<HeaderField>().unwrap(),
-                    value: "0; url=/authority".parse::<AsciiString>().unwrap()
+                    field: "Refresh".parse().unwrap(),
+                    value: "0; url=/authority".parse().unwrap()
                 });
                 return request.respond(response);
             },

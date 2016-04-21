@@ -15,6 +15,7 @@ use dns::resolve::DnsResolver;
 use dns::protocol::{DnsPacket, QueryType, DnsRecord, ResultCode};
 use dns::buffer::{PacketBuffer, BytePacketBuffer, VectorPacketBuffer, StreamPacketBuffer};
 use dns::context::ServerContext;
+use dns::netutil::{read_packet_length, write_packet_length};
 
 macro_rules! return_or_report {
     ( $x:expr, $message:expr ) => {
@@ -327,14 +328,13 @@ impl DnsServer for DnsTcpServer {
 
                     let _ = context.statistics.tcp_query_count.fetch_add(1, Ordering::Release);
 
+                    // When DNS packets are sent over TCP, they're prefixed with a two byte
+                    // length. We don't really need to know the length in advance, so we
+                    // just move past it and continue reading as usual
+                    ignore_or_report!(read_packet_length(&mut stream), "Failed to read query packet length");
+
                     let request = {
                         let mut stream_buffer = StreamPacketBuffer::new(&mut stream);
-
-                        // When DNS packets are sent over TCP, they're prefixed with a two byte
-                        // length. We don't really need to know the length in advance, so we
-                        // just move past it and continue reading as usual
-                        ignore_or_report!(stream_buffer.read_u16(), "Failed to read query packet length");
-
                         return_or_report!(DnsPacket::from_buffer(&mut stream_buffer), "Failed to read query packet")
                     };
 
@@ -346,12 +346,7 @@ impl DnsServer for DnsTcpServer {
                     // As is the case for incoming queries, we need to send a 2 byte length
                     // value before handing of the actual packet.
                     let len = res_buffer.pos();
-
-                    let mut len_buffer = [0; 2];
-                    len_buffer[0] = (len >> 8) as u8;
-                    len_buffer[1] = (len & 0xFF) as u8;
-
-                    ignore_or_report!(stream.write(&len_buffer), "Failed to write packet size");
+                    ignore_or_report!(write_packet_length(&mut stream, len), "Failed to write packet size");
 
                     // Now we can go ahead and write the actual packet
                     let data = return_or_report!(res_buffer.get_range(0, len), "Failed to get packet data");
