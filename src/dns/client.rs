@@ -34,7 +34,7 @@ pub trait DnsClient {
 /// in any order. For that reason, we fire off replies on the sending thread, but
 /// handle replies on a single thread. A channel is created for every response,
 /// and the caller will block on the channel until the a response is received.
-pub struct DnsUdpClient {
+pub struct DnsNetworkClient {
 
     total_sent: AtomicUsize,
     total_failed: AtomicUsize,
@@ -58,12 +58,12 @@ struct PendingQuery {
     tx: Sender<Option<DnsPacket>>
 }
 
-unsafe impl Send for DnsUdpClient {}
-unsafe impl Sync for DnsUdpClient {}
+unsafe impl Send for DnsNetworkClient {}
+unsafe impl Sync for DnsNetworkClient {}
 
-impl DnsUdpClient {
-    pub fn new(port: u16) -> DnsUdpClient {
-        DnsUdpClient {
+impl DnsNetworkClient {
+    pub fn new(port: u16) -> DnsNetworkClient {
+        DnsNetworkClient {
             total_sent: AtomicUsize::new(0),
             total_failed: AtomicUsize::new(0),
             seq: AtomicUsize::new(0),
@@ -71,125 +71,60 @@ impl DnsUdpClient {
             pending_queries: Arc::new(Mutex::new(Vec::new()))
         }
     }
-}
 
-impl DnsClient for DnsUdpClient {
+    /// Send a DNS query using TCP transport
+    ///
+    /// This is much simpler than using UDP, since the kernel will take care of
+    /// packet ordering, connection state, timeouts etc.
+    pub fn send_tcp_query(&self,
+                          qname: &str,
+                          qtype: QueryType,
+                          server: (&str, u16),
+                          recursive: bool) -> Result<DnsPacket> {
 
-    fn get_sent_count(&self) -> usize {
-        self.total_sent.load(Ordering::Acquire)
-    }
+        let _ = self.total_sent.fetch_add(1, Ordering::Release);
 
-    fn get_failed_count(&self) -> usize {
-        self.total_failed.load(Ordering::Acquire)
-    }
+        // Prepare request
+        let mut packet = DnsPacket::new();
 
-    /// The run method launches a worker thread. Unless this thread is running, no
-    /// responses will ever be generated, and clients will just block indefinitely.
-    fn run(&self) -> Result<()> {
-
-        // Start the thread for handling incoming responses
-        {
-            let socket_copy = try!(self.socket.try_clone());
-            let pending_queries_lock = self.pending_queries.clone();
-
-            try!(Builder::new().name("DnsUdpClient-worker-thread".into()).spawn(
-                move || {
-                    loop {
-                        // Read data into a buffer
-                        let mut res_buffer = BytePacketBuffer::new();
-                        match socket_copy.recv_from(&mut res_buffer.buf) {
-                            Ok(_) => {},
-                            Err(_) => {
-                                continue;
-                            }
-                        }
-
-                        // Construct a DnsPacket from buffer, skipping the packet if parsing
-                        // failed
-                        let packet = match DnsPacket::from_buffer(&mut res_buffer) {
-                            Ok(packet) => packet,
-                            Err(err) => {
-                                println!("DnsUdpClient failed to parse packet with error: {}", err);
-                                continue;
-                            }
-                        };
-
-                        // Acquire a lock on the pending_queries list, and search for a
-                        // matching PendingQuery to which to deliver the response.
-                        if let Ok(mut pending_queries) = pending_queries_lock.lock() {
-
-                            let mut matched_query = None;
-                            for (i, pending_query) in pending_queries.iter().enumerate() {
-
-                                if pending_query.seq == packet.header.id {
-
-                                    // Matching query found, send the response
-                                    let _ = pending_query.tx.send(Some(packet.clone()));
-
-                                    // Mark this index for removal from list
-                                    matched_query = Some(i);
-
-                                    break;
-                                }
-                            }
-
-                            if let Some(idx) = matched_query {
-                                pending_queries.remove(idx);
-                            } else {
-                                println!("Discarding response for: {:?}", packet.questions[0]);
-                            }
-                        }
-                    }
-                }));
+        packet.header.id = self.seq.fetch_add(1, Ordering::SeqCst) as u16;
+        if packet.header.id + 1 == 0xFFFF {
+            self.seq.compare_and_swap(0xFFFF, 0, Ordering::SeqCst);
         }
 
-        // Start the thread for timing out requests
-        {
-            let pending_queries_lock = self.pending_queries.clone();
+        packet.header.questions = 1;
+        packet.header.recursion_desired = recursive;
 
-            try!(Builder::new().name("DnsUdpClient-timeout-thread".into()).spawn(
-                move || {
-                    let timeout = Duration::seconds(1);
-                    loop {
-                        if let Ok(mut pending_queries) = pending_queries_lock.lock() {
+        packet.questions.push(DnsQuestion::new(qname.into(), qtype));
 
-                            let mut finished_queries = Vec::new();
-                            for (i, pending_query) in pending_queries.iter().enumerate() {
+        // Send query
+        let mut req_buffer = BytePacketBuffer::new();
+        try!(packet.write(&mut req_buffer, 0xFFFF));
 
-                                let expires = pending_query.timestamp + timeout;
-                                if expires < Local::now() {
-                                    let _ = pending_query.tx.send(None);
-                                    finished_queries.push(i);
-                                }
-                            }
+        let mut socket = try!(TcpStream::connect(server));
 
-                            // Remove `PendingQuery` objects from the list, in reverse order
-                            for idx in finished_queries.iter().rev() {
-                                pending_queries.remove(*idx);
-                            }
+        try!(write_packet_length(&mut socket, req_buffer.pos()));
+        try!(socket.write(&req_buffer.buf[0..req_buffer.pos]));
+        try!(socket.flush());
 
-                        }
+        let _ = try!(read_packet_length(&mut socket));
 
-                        sleep(SleepDuration::from_millis(100));
-                    }
-                }));
-        }
-
-        Ok(())
+        let mut stream_buffer = StreamPacketBuffer::new(&mut socket);
+        DnsPacket::from_buffer(&mut stream_buffer)
     }
 
-    /// Send a DNS query
+    /// Send a DNS query using UDP transport
     ///
     /// This will construct a query packet, and fire it off to the specified server.
     /// The query is sent from the callee thread, but responses are read on a
     /// worker thread, and returned to this thread through a channel. Thus this
     /// method is thread safe, and can be used from any number of threads in
     /// parallell.
-    fn send_query(&self,
-                  qname: &str,
-                  qtype: QueryType,
-                  server: (&str, u16),
-                  recursive: bool) -> Result<DnsPacket> {
+    pub fn send_udp_query(&self,
+                          qname: &str,
+                          qtype: QueryType,
+                          server: (&str, u16),
+                          recursive: bool) -> Result<DnsPacket> {
 
         let _ = self.total_sent.fetch_add(1, Ordering::Release);
 
@@ -242,33 +177,7 @@ impl DnsClient for DnsUdpClient {
     }
 }
 
-/// `DnsTcpClient` is a client for use when sending queries over TCP transport
-///
-/// This client is much simpler than `DnsUdpClient`, since the network stack takes
-/// care of things like packet ordering and isolation, which means that we don't
-/// have to maintain any state or do any synchronization for the duration of the
-/// request.
-#[derive(Default)]
-pub struct DnsTcpClient {
-
-    total_sent: AtomicUsize,
-    total_failed: AtomicUsize,
-
-    /// Counter for assigning packet ids
-    seq: AtomicUsize,
-}
-
-impl DnsTcpClient {
-    pub fn new() -> DnsTcpClient {
-        DnsTcpClient {
-            total_sent: AtomicUsize::new(0),
-            total_failed: AtomicUsize::new(0),
-            seq: AtomicUsize::new(0)
-        }
-    }
-}
-
-impl DnsClient for DnsTcpClient {
+impl DnsClient for DnsNetworkClient {
 
     fn get_sent_count(&self) -> usize {
         self.total_sent.load(Ordering::Acquire)
@@ -278,8 +187,98 @@ impl DnsClient for DnsTcpClient {
         self.total_failed.load(Ordering::Acquire)
     }
 
-    /// NOOP for `DnsTcpClient`
+    /// The run method launches a worker thread. Unless this thread is running, no
+    /// responses will ever be generated, and clients will just block indefinitely.
     fn run(&self) -> Result<()> {
+
+        // Start the thread for handling incoming responses
+        {
+            let socket_copy = try!(self.socket.try_clone());
+            let pending_queries_lock = self.pending_queries.clone();
+
+            try!(Builder::new().name("DnsNetworkClient-worker-thread".into()).spawn(
+                move || {
+                    loop {
+                        // Read data into a buffer
+                        let mut res_buffer = BytePacketBuffer::new();
+                        match socket_copy.recv_from(&mut res_buffer.buf) {
+                            Ok(_) => {},
+                            Err(_) => {
+                                continue;
+                            }
+                        }
+
+                        // Construct a DnsPacket from buffer, skipping the packet if parsing
+                        // failed
+                        let packet = match DnsPacket::from_buffer(&mut res_buffer) {
+                            Ok(packet) => packet,
+                            Err(err) => {
+                                println!("DnsNetworkClient failed to parse packet with error: {}", err);
+                                continue;
+                            }
+                        };
+
+                        // Acquire a lock on the pending_queries list, and search for a
+                        // matching PendingQuery to which to deliver the response.
+                        if let Ok(mut pending_queries) = pending_queries_lock.lock() {
+
+                            let mut matched_query = None;
+                            for (i, pending_query) in pending_queries.iter().enumerate() {
+
+                                if pending_query.seq == packet.header.id {
+
+                                    // Matching query found, send the response
+                                    let _ = pending_query.tx.send(Some(packet.clone()));
+
+                                    // Mark this index for removal from list
+                                    matched_query = Some(i);
+
+                                    break;
+                                }
+                            }
+
+                            if let Some(idx) = matched_query {
+                                pending_queries.remove(idx);
+                            } else {
+                                println!("Discarding response for: {:?}", packet.questions[0]);
+                            }
+                        }
+                    }
+                }));
+        }
+
+        // Start the thread for timing out requests
+        {
+            let pending_queries_lock = self.pending_queries.clone();
+
+            try!(Builder::new().name("DnsNetworkClient-timeout-thread".into()).spawn(
+                move || {
+                    let timeout = Duration::seconds(1);
+                    loop {
+                        if let Ok(mut pending_queries) = pending_queries_lock.lock() {
+
+                            let mut finished_queries = Vec::new();
+                            for (i, pending_query) in pending_queries.iter().enumerate() {
+
+                                let expires = pending_query.timestamp + timeout;
+                                if expires < Local::now() {
+                                    let _ = pending_query.tx.send(None);
+                                    finished_queries.push(i);
+                                }
+                            }
+
+                            // Remove `PendingQuery` objects from the list, in reverse order
+                            for idx in finished_queries.iter().rev() {
+                                pending_queries.remove(*idx);
+                            }
+
+                        }
+
+                        sleep(SleepDuration::from_millis(100));
+                    }
+                }));
+        }
+
         Ok(())
     }
 
@@ -289,35 +288,13 @@ impl DnsClient for DnsTcpClient {
                   server: (&str, u16),
                   recursive: bool) -> Result<DnsPacket> {
 
-        let _ = self.total_sent.fetch_add(1, Ordering::Release);
-
-        // Prepare request
-        let mut packet = DnsPacket::new();
-
-        packet.header.id = self.seq.fetch_add(1, Ordering::SeqCst) as u16;
-        if packet.header.id + 1 == 0xFFFF {
-            self.seq.compare_and_swap(0xFFFF, 0, Ordering::SeqCst);
+        let packet = try!(self.send_udp_query(qname, qtype, server, recursive));
+        if !packet.header.truncated_message {
+            return Ok(packet);
         }
 
-        packet.header.questions = 1;
-        packet.header.recursion_desired = recursive;
-
-        packet.questions.push(DnsQuestion::new(qname.into(), qtype));
-
-        // Send query
-        let mut req_buffer = BytePacketBuffer::new();
-        try!(packet.write(&mut req_buffer, 0xFFFF));
-
-        let mut socket = try!(TcpStream::connect(server));
-
-        try!(write_packet_length(&mut socket, req_buffer.pos()));
-        try!(socket.write(&req_buffer.buf[0..req_buffer.pos]));
-        try!(socket.flush());
-
-        let _ = try!(read_packet_length(&mut socket));
-
-        let mut stream_buffer = StreamPacketBuffer::new(&mut socket);
-        DnsPacket::from_buffer(&mut stream_buffer)
+        println!("Truncated response - resending as TCP");
+        self.send_tcp_query(qname, qtype, server, recursive)
     }
 }
 
@@ -372,10 +349,13 @@ pub mod tests {
 
     #[test]
     pub fn test_udp_client() {
-        let client = DnsUdpClient::new(31456);
+        let client = DnsNetworkClient::new(31456);
         client.run().unwrap();
 
-        let res = client.send_query("google.com", QueryType::A, ("8.8.8.8", 53), true).unwrap();
+        let res = client.send_udp_query("google.com",
+                                        QueryType::A,
+                                        ("8.8.8.8", 53),
+                                        true).unwrap();
 
         assert_eq!(res.questions[0].name, "google.com");
         assert!(res.answers.len() > 0);
@@ -390,8 +370,11 @@ pub mod tests {
 
     #[test]
     pub fn test_tcp_client() {
-        let client = DnsTcpClient::new();
-        let res = client.send_query("google.com", QueryType::A, ("8.8.8.8", 53), true).unwrap();
+        let client = DnsNetworkClient::new(31457);
+        let res = client.send_tcp_query("google.com",
+                                        QueryType::A,
+                                        ("8.8.8.8", 53),
+                                        true).unwrap();
 
         assert_eq!(res.questions[0].name, "google.com");
         assert!(res.answers.len() > 0);

@@ -1,11 +1,11 @@
-//! The `ServerContext` in this thread holds the common state across the server
+//! The `ServerContext in this thread holds the common state across the server
 
 use std::io::Result;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize,Ordering};
 
 use dns::resolve::{DnsResolver,RecursiveDnsResolver,ForwardingDnsResolver};
-use dns::client::{DnsClient,DnsUdpClient};
+use dns::client::{DnsClient,DnsNetworkClient};
 use dns::cache::SynchronizedCache;
 use dns::authority::Authority;
 
@@ -57,7 +57,7 @@ impl ServerContext {
         ServerContext {
             authority: Authority::new(),
             cache: SynchronizedCache::new(),
-            client: Box::new(DnsUdpClient::new(34255)),
+            client: Box::new(DnsNetworkClient::new(34255)),
             dns_port: 53,
             api_port: 5380,
             resolve_strategy: ResolveStrategy::Recursive,
