@@ -98,24 +98,26 @@ most essential: the A record, mapping a name to an ip.
 Having gotten this far, let's get a feel for this in practice by performing
 a lookup using the `dig` tool:
 
-    # dig +noedns google.com
+```text
+# dig +noedns google.com
 
-    ; <<>> DiG 9.10.3-P4-Ubuntu <<>> +noedns google.com
-    ;; global options: +cmd
-    ;; Got answer:
-    ;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 36383
-    ;; flags: qr rd ra ad; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 0
+; <<>> DiG 9.10.3-P4-Ubuntu <<>> +noedns google.com
+;; global options: +cmd
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 36383
+;; flags: qr rd ra ad; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 0
 
-    ;; QUESTION SECTION:
-    ;google.com.                    IN      A
+;; QUESTION SECTION:
+;google.com.                    IN      A
 
-    ;; ANSWER SECTION:
-    google.com.             204     IN      A       172.217.18.142
+;; ANSWER SECTION:
+google.com.             204     IN      A       172.217.18.142
+```
 
-    ;; Query time: 0 msec
-    ;; SERVER: 192.168.1.1#53(192.168.1.1)
-    ;; WHEN: Wed Jul 06 13:24:19 CEST 2016
-    ;; MSG SIZE  rcvd: 44
+;; Query time: 0 msec
+;; SERVER: 192.168.1.1#53(192.168.1.1)
+;; WHEN: Wed Jul 06 13:24:19 CEST 2016
+;; MSG SIZE  rcvd: 44
 
 We're using the `+noedns` flag to make sure we stick to the original format.
 There are a few things of note in the output above:
@@ -140,36 +142,44 @@ deeper still and look at a hexdump of the packets. We can use `netcat` to listen
 on a part, and then direct `dig` to send the query there. In one terminal
 window we run:
 
-    # nc -u -l 1053 > query_packet.txt
+```text
+# nc -u -l 1053 > query_packet.txt
+```
 
 Then in another window, do:
 
-    # dig +retry=0 -p 1053 @127.0.0.1 +noedns google.com
+```text
+# dig +retry=0 -p 1053 @127.0.0.1 +noedns google.com
 
-    ; <<>> DiG 9.10.3-P4-Ubuntu <<>> +retry=0 -p 1053 @127.0.0.1 +noedns google.com
-    ; (1 server found)
-    ;; global options: +cmd
-    ;; connection timed out; no servers could be reached
+; <<>> DiG 9.10.3-P4-Ubuntu <<>> +retry=0 -p 1053 @127.0.0.1 +noedns google.com
+; (1 server found)
+;; global options: +cmd
+;; connection timed out; no servers could be reached
+```
 
 The failure is expected in this case, since `dig` will timeout when it doesn't
 receive a response. Since this fails, it exits. At this point `netcat` can be
 exited using Ctrl+C. We're left with a query packet in `packet.txt`. We can use our
 query packet to record a response packet as well:
 
-    # nc -u 8.8.8.8 53 < query_packet.txt > response_packet.txt
+```text
+# nc -u 8.8.8.8 53 < query_packet.txt > response_packet.txt
+```
 
 Give it a second, and the cancel using Ctrl+C. We are now ready to inspect our
 packets:
 
-    # hexdump -C query_packet.txt
-    00000000  86 2a 01 20 00 01 00 00  00 00 00 00 06 67 6f 6f  |.*. .........goo|
-    00000010  67 6c 65 03 63 6f 6d 00  00 01 00 01              |gle.com.....|
-    0000001c
-    # hexdump -C response_packet.txt
-    00000000  86 2a 81 80 00 01 00 01  00 00 00 00 06 67 6f 6f  |.*...........goo|
-    00000010  67 6c 65 03 63 6f 6d 00  00 01 00 01 c0 0c 00 01  |gle.com.........|
-    00000020  00 01 00 00 01 25 00 04  d8 3a d3 8e              |.....%...:..|
-    0000002c
+```text
+# hexdump -C query_packet.txt
+00000000  86 2a 01 20 00 01 00 00  00 00 00 00 06 67 6f 6f  |.*. .........goo|
+00000010  67 6c 65 03 63 6f 6d 00  00 01 00 01              |gle.com.....|
+0000001c
+# hexdump -C response_packet.txt
+00000000  86 2a 81 80 00 01 00 01  00 00 00 00 06 67 6f 6f  |.*...........goo|
+00000010  67 6c 65 03 63 6f 6d 00  00 01 00 01 c0 0c 00 01  |gle.com.........|
+00000020  00 01 00 00 01 25 00 04  d8 3a d3 8e              |.....%...:..|
+0000002c
+```
 
 Let's see if we can make some sense of this. We know from earlier that the
 header is 12 bytes long. For the query packet, the header bytes are:
@@ -184,14 +194,16 @@ to parse is the remaining two bytes. In order to make sense of them, we'll have
 to convert them to binary. Starting with the `01 20` of the query packet, we
 find (with the Most Significant Bit first):
 
-    0 0 0 0 0 0 0 1  0 0 1 0 0 0 0 0
-    - -+-+-+- - - -  - -+-+- -+-+-+-
-    Q    O    A T R  R   Z      R
-    R    P    A C D  A          C
-         C                      O
-         O                      D
-         D                      E
-         E
+```text
+0 0 0 0 0 0 0 1  0 0 1 0 0 0 0 0
+- -+-+-+- - - -  - -+-+- -+-+-+-
+Q    O    A T R  R   Z      R
+R    P    A C D  A          C
+     C                      O
+     O                      D
+     D                      E
+     E
+```
 
 Except for the DNSSEC related bit in the `Z` section, this is as expected. `QR`
 is 0 since its a Query, `OPCODE` is also 0 since it's a standard lookup, the
@@ -201,14 +213,16 @@ queries either.
 
 Moving on to the flag bytes of the response packet `81 80`:
 
-    1 0 0 0 0 0 0 1  1 0 0 0 0 0 0 0
-    - -+-+-+- - - -  - -+-+- -+-+-+-
-    Q    O    A T R  R   Z      R
-    R    P    A C D  A          C
-         C                      O
-         O                      D
-         D                      E
-         E
+```text
+1 0 0 0 0 0 0 1  1 0 0 0 0 0 0 0
+- -+-+-+- - - -  - -+-+- -+-+-+-
+Q    O    A T R  R   Z      R
+R    P    A C D  A          C
+     C                      O
+     O                      D
+     D                      E
+     E
+```
 
 Since this is a response `QR` is set, and so is `RA` to indicate that the
 server do support recursion. Looking at the remaining eight bytes of the reply,
@@ -218,11 +232,13 @@ answer record.
 Immediately past the header, we've got the question. Let's break it down byte
 by byte:
 
-                        query name              type   class
-           -----------------------------------  -----  -----
-    HEX    06 67 6f 6f 67 6c 65 03 63 6f 6d 00  00 01  00 01
-    ASCII     g  o  o  g  l  e     c  o  m
-    DEC    6                    3           0       1      1
+```text
+                    query name              type   class
+       -----------------------------------  -----  -----
+HEX    06 67 6f 6f 67 6c 65 03 63 6f 6d 00  00 01  00 01
+ASCII     g  o  o  g  l  e     c  o  m
+DEC    6                    3           0       1      1
+```
 
 As outlined in the table earlier, it consists of three parts: query name, type
 and class. There's something interesting about the how the name is encoded,
@@ -237,10 +253,12 @@ We've now reached the end of our query packet, but there is some data left to
 decode in the response packet. The remaining data is a single A record holding
 the corresponding IP address for google.com:
 
-          name     type   class         ttl        len      ip
-          ------  ------  ------  --------------  ------  --------------
-    HEX   c0  0c  00  01  00  01  00  00  01  25  00  04  d8  3a  d3  8e
-    DEC   192 12    1       1           293         4     216 58  211 142
+```text
+      name     type   class         ttl        len      ip
+      ------  ------  ------  --------------  ------  --------------
+HEX   c0  0c  00  01  00  01  00  00  01  25  00  04  d8  3a  d3  8e
+DEC   192 12    1       1           293         4     216 58  211 142
+```
 
 Most of this is as expected: Type is 1 for `A record`, Class is 1 for `IN`, TTL
 in this case is 293 which seems reasonable, the data length is 4 which is as it
@@ -254,43 +272,45 @@ the domain names, and part of the same name tends to reoccur, there's some
 obvious space saving opportunity. For example, consider the following DNS
 query:
 
-    # dig @a.root-servers.net com
+```text
+# dig @a.root-servers.net com
 
-    - snip -
+- snip -
 
-    ;; AUTHORITY SECTION:
-    com.                172800  IN  NS      e.gtld-servers.net.
-    com.                172800  IN  NS      b.gtld-servers.net.
-    com.                172800  IN  NS      j.gtld-servers.net.
-    com.                172800  IN  NS      m.gtld-servers.net.
-    com.                172800  IN  NS      i.gtld-servers.net.
-    com.                172800  IN  NS      f.gtld-servers.net.
-    com.                172800  IN  NS      a.gtld-servers.net.
-    com.                172800  IN  NS      g.gtld-servers.net.
-    com.                172800  IN  NS      h.gtld-servers.net.
-    com.                172800  IN  NS      l.gtld-servers.net.
-    com.                172800  IN  NS      k.gtld-servers.net.
-    com.                172800  IN  NS      c.gtld-servers.net.
-    com.                172800  IN  NS      d.gtld-servers.net.
+;; AUTHORITY SECTION:
+com.                172800  IN  NS      e.gtld-servers.net.
+com.                172800  IN  NS      b.gtld-servers.net.
+com.                172800  IN  NS      j.gtld-servers.net.
+com.                172800  IN  NS      m.gtld-servers.net.
+com.                172800  IN  NS      i.gtld-servers.net.
+com.                172800  IN  NS      f.gtld-servers.net.
+com.                172800  IN  NS      a.gtld-servers.net.
+com.                172800  IN  NS      g.gtld-servers.net.
+com.                172800  IN  NS      h.gtld-servers.net.
+com.                172800  IN  NS      l.gtld-servers.net.
+com.                172800  IN  NS      k.gtld-servers.net.
+com.                172800  IN  NS      c.gtld-servers.net.
+com.                172800  IN  NS      d.gtld-servers.net.
 
-    ;; ADDITIONAL SECTION:
-    e.gtld-servers.net. 172800  IN  A       192.12.94.30
-    b.gtld-servers.net. 172800  IN  A       192.33.14.30
-    b.gtld-servers.net. 172800  IN  AAAA    2001:503:231d::2:30
-    j.gtld-servers.net. 172800  IN  A       192.48.79.30
-    m.gtld-servers.net. 172800  IN  A       192.55.83.30
-    i.gtld-servers.net. 172800  IN  A       192.43.172.30
-    f.gtld-servers.net. 172800  IN  A       192.35.51.30
-    a.gtld-servers.net. 172800  IN  A       192.5.6.30
-    a.gtld-servers.net. 172800  IN  AAAA    2001:503:a83e::2:30
-    g.gtld-servers.net. 172800  IN  A       192.42.93.30
-    h.gtld-servers.net. 172800  IN  A       192.54.112.30
-    l.gtld-servers.net. 172800  IN  A       192.41.162.30
-    k.gtld-servers.net. 172800  IN  A       192.52.178.30
-    c.gtld-servers.net. 172800  IN  A       192.26.92.30
-    d.gtld-servers.net. 172800  IN  A       192.31.80.30
+;; ADDITIONAL SECTION:
+e.gtld-servers.net. 172800  IN  A       192.12.94.30
+b.gtld-servers.net. 172800  IN  A       192.33.14.30
+b.gtld-servers.net. 172800  IN  AAAA    2001:503:231d::2:30
+j.gtld-servers.net. 172800  IN  A       192.48.79.30
+m.gtld-servers.net. 172800  IN  A       192.55.83.30
+i.gtld-servers.net. 172800  IN  A       192.43.172.30
+f.gtld-servers.net. 172800  IN  A       192.35.51.30
+a.gtld-servers.net. 172800  IN  A       192.5.6.30
+a.gtld-servers.net. 172800  IN  AAAA    2001:503:a83e::2:30
+g.gtld-servers.net. 172800  IN  A       192.42.93.30
+h.gtld-servers.net. 172800  IN  A       192.54.112.30
+l.gtld-servers.net. 172800  IN  A       192.41.162.30
+k.gtld-servers.net. 172800  IN  A       192.52.178.30
+c.gtld-servers.net. 172800  IN  A       192.26.92.30
+d.gtld-servers.net. 172800  IN  A       192.31.80.30
 
-    - snip -
+- snip -
+```
 
 Here we query one of the internet root servers for the name servers handling
 the .com TLD. Notice how `gtld-servers.net.` keeps reappearing -- wouldn't it
@@ -320,346 +340,402 @@ Now finally we know enough to start implementing! The first order of business is
 that we need some convenient method for manipulating the packets. For this,
 we'll use a `struct` called `BytePacketBuffer`.
 
-    pub struct BytePacketBuffer {
-        pub buf: [u8; 512],
-        pub pos: usize
-    }
+```rust
+pub struct BytePacketBuffer {
+    pub buf: [u8; 512],
+    pub pos: usize
+}
 
-    impl BytePacketBuffer {
+impl BytePacketBuffer {
 
-        pub fn new() -> BytePacketBuffer {
-            BytePacketBuffer {
-                buf: [0; 512],
-                pos: 0
-            }
+    pub fn new() -> BytePacketBuffer {
+        BytePacketBuffer {
+            buf: [0; 512],
+            pos: 0
         }
+    }
+```
 
 This gives us a fresh buffer for holding the packet contents, and a field for
 keeping track of where we are. When handling the reading of domain names later
 on, we'll need a way of reading and manipulating our buffer position:
 
-        fn pos(&self) -> usize {
-            self.pos
-        }
+```rust
+    fn pos(&self) -> usize {
+        self.pos
+    }
 
-        fn step(&mut self, steps: usize) -> Result<()> {
-            self.pos += steps;
+    fn step(&mut self, steps: usize) -> Result<()> {
+        self.pos += steps;
 
-            Ok(())
-        }
+        Ok(())
+    }
 
-        fn seek(&mut self, pos: usize) -> Result<()> {
-            self.pos = pos;
+    fn seek(&mut self, pos: usize) -> Result<()> {
+        self.pos = pos;
 
-            Ok(())
-        }
+        Ok(())
+    }
+```
 
 Next up is a method for reading a single byte, and moving one step forward:
 
-        fn read(&mut self) -> Result<u8> {
-            if self.pos >= 512 {
-                return Err(Error::new(ErrorKind::InvalidInput, "End of buffer"));
-            }
-            let res = self.buf[self.pos];
-            self.pos += 1;
-
-            Ok(res)
+```rust
+    fn read(&mut self) -> Result<u8> {
+        if self.pos >= 512 {
+            return Err(Error::new(ErrorKind::InvalidInput, "End of buffer"));
         }
+        let res = self.buf[self.pos];
+        self.pos += 1;
+
+        Ok(res)
+    }
+```
 
 We might also want to retrieve a byte at our current position without moving
 forward:
 
-        fn get(&mut self, pos: usize) -> Result<u8> {
-            if pos >= 512 {
-                return Err(Error::new(ErrorKind::InvalidInput, "End of buffer"));
-            }
-            Ok(self.buf[pos])
+```rust
+    fn get(&mut self, pos: usize) -> Result<u8> {
+        if pos >= 512 {
+            return Err(Error::new(ErrorKind::InvalidInput, "End of buffer"));
         }
+        Ok(self.buf[pos])
+    }
+```
 
 Sometimes we want to get a full range of the buffer:
 
-        fn get_range(&mut self, start: usize, len: usize) -> Result<&[u8]> {
-            if start + len >= 512 {
-                return Err(Error::new(ErrorKind::InvalidInput, "End of buffer"));
-            }
-            Ok(&self.buf[start..start+len as usize])
+```rust
+    fn get_range(&mut self, start: usize, len: usize) -> Result<&[u8]> {
+        if start + len >= 512 {
+            return Err(Error::new(ErrorKind::InvalidInput, "End of buffer"));
         }
+        Ok(&self.buf[start..start+len as usize])
+    }
+```
 
 In many cases we'll want to read a two-byte integer or a four-byte integer:
 
-        fn read_u16(&mut self) -> Result<u16>
-        {
-            let res = ((try!(self.read()) as u16) << 8) |
-                      (try!(self.read()) as u16);
+```rust
+    fn read_u16(&mut self) -> Result<u16>
+    {
+        let res = ((try!(self.read()) as u16) << 8) |
+                  (try!(self.read()) as u16);
 
-            Ok(res)
-        }
+        Ok(res)
+    }
 
-        fn read_u32(&mut self) -> Result<u32>
-        {
-            let res = ((try!(self.read()) as u32) << 24) |
-                      ((try!(self.read()) as u32) << 16) |
-                      ((try!(self.read()) as u32) << 8) |
-                      ((try!(self.read()) as u32) << 0);
+    fn read_u32(&mut self) -> Result<u32>
+    {
+        let res = ((try!(self.read()) as u32) << 24) |
+                  ((try!(self.read()) as u32) << 16) |
+                  ((try!(self.read()) as u32) << 8) |
+                  ((try!(self.read()) as u32) << 0);
 
-            Ok(res)
-        }
+        Ok(res)
+    }
+```
 
 And then we get to the tricky part of correctly reading domain names, handling
 any jump we might encounter:
 
-        fn read_qname(&mut self, outstr: &mut String) -> Result<()>
-        {
+```rust
+    fn read_qname(&mut self, outstr: &mut String) -> Result<()>
+    {
+```
 
 Since we might encounter jumps, we'll keep track of our position
 locally as opposed to using the position within the struct.
 
-            let mut pos = self.pos();
+```rust
+        let mut pos = self.pos();
+```
 
 We'll keep track of whether or not we've jumped for use later on
 
-            let mut jumped = false;
+```rust
+        let mut jumped = false;
+```
 
 Our delimeter which we append for each label. Since we don't want a dot at the
 beginning of the domain name we'll leave it empty for now and set it to "." at
 the end of the first iteration.
 
-            let mut delim = "";
-            loop {
+```rust
+        let mut delim = "";
+        loop {
+```
 
 We're at the beginning of a label, so our current position is the length byte.
 
-                let len = try!(self.get(pos));
+```rust
+            let len = try!(self.get(pos));
+```
 
 `len* is a two byte sequence, where the two highest bits of the first byte is
 set, represents a offset relative to the start of the buffer. We handle this
 by jumping to the offset, setting a flag to indicate that we shouldn't update
 the shared buffer position once done.
 
-                if (len & 0xC0) > 0 {
+```rust
+            if (len & 0xC0) > 0 {
+```
 
 When a jump is performed, we only modify the shared buffer position once, and avoid
 making the change later on.
 
-                    if !jumped {
-                        try!(self.seek(pos+2));
-                    }
+```rust
+                if !jumped {
+                    try!(self.seek(pos+2));
+                }
+```
 
 Read another byte, and calculate the jump offset:
 
-                    let b2 = try!(self.get(pos+1)) as u16;
-                    let offset = (((len as u16) ^ 0xC0) << 8) | b2;
-                    pos = offset as usize;
+```rust
+                let b2 = try!(self.get(pos+1)) as u16;
+                let offset = (((len as u16) ^ 0xC0) << 8) | b2;
+                pos = offset as usize;
+```
 
 Indicate that a jump was performed.
 
+```rust
                     jumped = true;
+```
 
 Restart the loop and retry at the new position.
 
-                    continue;
-                }
+```rust
+                continue;
+            }
+```
 
 Move a single byte forward to move past the length byte.
 
-                pos += 1;
+```rust
+            pos += 1;
+```
 
 Domain names are terminated by an empty label of length 0, so if the length is zero
 we're done.
 
-                if len == 0 {
-                    break;
-                }
+```rust
+            if len == 0 {
+                break;
+            }
+```
 
 Append the delimiter to our output buffer first.
 
-                outstr.push_str(delim);
+```rust
+            outstr.push_str(delim);
+```
 
 Extract the actual ASCII bytes for this label and append them to the output buffer.
 
-                let str_buffer = try!(self.get_range(pos, len as usize));
-                outstr.push_str(&String::from_utf8_lossy(str_buffer).to_lowercase());
+```rust
+            let str_buffer = try!(self.get_range(pos, len as usize));
+            outstr.push_str(&String::from_utf8_lossy(str_buffer).to_lowercase());
 
-                delim = ".";
+            delim = ".";
+```
 
 Move forward the full length of the label.
 
-                pos += len as usize;
-            }
+```rust
+            pos += len as usize;
+        }
+```
 
 If a jump has been performed, we've already modified the buffer position state and
 shouldn't do so again.
 
-            if !jumped {
-                try!(self.seek(pos));
-            }
+```rust
+        if !jumped {
+            try!(self.seek(pos));
+        }
 
-            Ok(())
-        } // End of read_qname
+        Ok(())
+    } // End of read_qname
+```
 
 Oh, and we're done:
 
-    } // End of BytePacketBuffer
+```rust
+} // End of BytePacketBuffer
+```
 
 ### ResultCode
 
 Before we move on to the header, we'll add an enum for the values of `rescode` field:
 
-    #[derive(Copy,Clone,Debug,PartialEq,Eq)]
-    pub enum ResultCode {
-        NOERROR = 0,
-        FORMERR = 1,
-        SERVFAIL = 2,
-        NXDOMAIN = 3,
-        NOTIMP = 4,
-        REFUSED = 5
-    }
+```rust
+#[derive(Copy,Clone,Debug,PartialEq,Eq)]
+pub enum ResultCode {
+    NOERROR = 0,
+    FORMERR = 1,
+    SERVFAIL = 2,
+    NXDOMAIN = 3,
+    NOTIMP = 4,
+    REFUSED = 5
+}
 
-    impl ResultCode {
-        pub fn from_num(num: u8) -> ResultCode {
-            match num {
-                1 => ResultCode::FORMERR,
-                2 => ResultCode::SERVFAIL,
-                3 => ResultCode::NXDOMAIN,
-                4 => ResultCode::NOTIMP,
-                5 => ResultCode::REFUSED,
-                0 | _ => ResultCode::NOERROR
-            }
+impl ResultCode {
+    pub fn from_num(num: u8) -> ResultCode {
+        match num {
+            1 => ResultCode::FORMERR,
+            2 => ResultCode::SERVFAIL,
+            3 => ResultCode::NXDOMAIN,
+            4 => ResultCode::NOTIMP,
+            5 => ResultCode::REFUSED,
+            0 | _ => ResultCode::NOERROR
         }
     }
+}
+```
 
 ### DnsHeader
 
 Now we can get to work on the header. We'll represent it like this:
 
-    #[derive(Clone,Debug)]
-    pub struct DnsHeader {
-        pub id: u16, // 16 bits
+```rust
+#[derive(Clone,Debug)]
+pub struct DnsHeader {
+    pub id: u16, // 16 bits
 
-        pub recursion_desired: bool, // 1 bit
-        pub truncated_message: bool, // 1 bit
-        pub authoritative_answer: bool, // 1 bit
-        pub opcode: u8, // 4 bits
-        pub response: bool, // 1 bit
+    pub recursion_desired: bool, // 1 bit
+    pub truncated_message: bool, // 1 bit
+    pub authoritative_answer: bool, // 1 bit
+    pub opcode: u8, // 4 bits
+    pub response: bool, // 1 bit
 
-        pub rescode: ResultCode, // 4 bits
-        pub checking_disabled: bool, // 1 bit
-        pub authed_data: bool, // 1 bit
-        pub z: bool, // 1 bit
-        pub recursion_available: bool, // 1 bit
+    pub rescode: ResultCode, // 4 bits
+    pub checking_disabled: bool, // 1 bit
+    pub authed_data: bool, // 1 bit
+    pub z: bool, // 1 bit
+    pub recursion_available: bool, // 1 bit
 
-        pub questions: u16, // 16 bits
-        pub answers: u16, // 16 bits
-        pub authoritative_entries: u16, // 16 bits
-        pub resource_entries: u16 // 16 bits
-    }
+    pub questions: u16, // 16 bits
+    pub answers: u16, // 16 bits
+    pub authoritative_entries: u16, // 16 bits
+    pub resource_entries: u16 // 16 bits
+}
+```
 
 The implementation involves a lot of bit twiddling:
 
-    impl DnsHeader {
-        pub fn new() -> DnsHeader {
-            DnsHeader { id: 0,
+```rust
+impl DnsHeader {
+    pub fn new() -> DnsHeader {
+        DnsHeader { id: 0,
 
-                        recursion_desired: false,
-                        truncated_message: false,
-                        authoritative_answer: false,
-                        opcode: 0,
-                        response: false,
+                    recursion_desired: false,
+                    truncated_message: false,
+                    authoritative_answer: false,
+                    opcode: 0,
+                    response: false,
 
-                        rescode: ResultCode::NOERROR,
-                        checking_disabled: false,
-                        authed_data: false,
-                        z: false,
-                        recursion_available: false,
+                    rescode: ResultCode::NOERROR,
+                    checking_disabled: false,
+                    authed_data: false,
+                    z: false,
+                    recursion_available: false,
 
-                        questions: 0,
-                        answers: 0,
-                        authoritative_entries: 0,
-                        resource_entries: 0 }
-        }
-
-        pub fn read(&mut self, buffer: &mut BytePacketBuffer) -> Result<()> {
-            self.id = try!(buffer.read_u16());
-
-            let flags = try!(buffer.read_u16());
-            let a = (flags >> 8) as u8;
-            let b = (flags & 0xFF) as u8;
-            self.recursion_desired = (a & (1 << 0)) > 0;
-            self.truncated_message = (a & (1 << 1)) > 0;
-            self.authoritative_answer = (a & (1 << 2)) > 0;
-            self.opcode = (a >> 3) & 0x0F;
-            self.response = (a & (1 << 7)) > 0;
-
-            self.rescode = ResultCode::from_num(b & 0x0F);
-            self.checking_disabled = (b & (1 << 4)) > 0;
-            self.authed_data = (b & (1 << 5)) > 0;
-            self.z = (b & (1 << 6)) > 0;
-            self.recursion_available = (b & (1 << 7)) > 0;
-
-            self.questions = try!(buffer.read_u16());
-            self.answers = try!(buffer.read_u16());
-            self.authoritative_entries = try!(buffer.read_u16());
-            self.resource_entries = try!(buffer.read_u16());
-
-            // Return the constant header size
-            Ok(())
-        }
+                    questions: 0,
+                    answers: 0,
+                    authoritative_entries: 0,
+                    resource_entries: 0 }
     }
+
+    pub fn read(&mut self, buffer: &mut BytePacketBuffer) -> Result<()> {
+        self.id = try!(buffer.read_u16());
+
+        let flags = try!(buffer.read_u16());
+        let a = (flags >> 8) as u8;
+        let b = (flags & 0xFF) as u8;
+        self.recursion_desired = (a & (1 << 0)) > 0;
+        self.truncated_message = (a & (1 << 1)) > 0;
+        self.authoritative_answer = (a & (1 << 2)) > 0;
+        self.opcode = (a >> 3) & 0x0F;
+        self.response = (a & (1 << 7)) > 0;
+
+        self.rescode = ResultCode::from_num(b & 0x0F);
+        self.checking_disabled = (b & (1 << 4)) > 0;
+        self.authed_data = (b & (1 << 5)) > 0;
+        self.z = (b & (1 << 6)) > 0;
+        self.recursion_available = (b & (1 << 7)) > 0;
+
+        self.questions = try!(buffer.read_u16());
+        self.answers = try!(buffer.read_u16());
+        self.authoritative_entries = try!(buffer.read_u16());
+        self.resource_entries = try!(buffer.read_u16());
+
+        // Return the constant header size
+        Ok(())
+    }
+}
+```
 
 ### QueryType
 
 Before moving on to the question part of the packet, we'll need a way to
 represent the record type being queried:
 
-    #[derive(PartialEq,Eq,Debug,Clone,Hash,Copy)]
-    pub enum QueryType {
-        UNKNOWN(u16),
-        A, // 1
-    }
+```rust
+#[derive(PartialEq,Eq,Debug,Clone,Hash,Copy)]
+pub enum QueryType {
+    UNKNOWN(u16),
+    A, // 1
+}
 
-    impl QueryType {
-        pub fn to_num(&self) -> u16 {
-            match *self {
-                QueryType::UNKNOWN(x) => x,
-                QueryType::A => 1,
-            }
-        }
-
-        pub fn from_num(num: u16) -> QueryType {
-            match num {
-                1 => QueryType::A,
-                _ => QueryType::UNKNOWN(num)
-            }
+impl QueryType {
+    pub fn to_num(&self) -> u16 {
+        match *self {
+            QueryType::UNKNOWN(x) => x,
+            QueryType::A => 1,
         }
     }
+
+    pub fn from_num(num: u16) -> QueryType {
+        match num {
+            1 => QueryType::A,
+            _ => QueryType::UNKNOWN(num)
+        }
+    }
+}
+```
 
 ### DnsQuestion
 
 The enum allows us to easily add more record types later on. Now for the
 question entries:
 
-    #[derive(Debug,Clone,PartialEq,Eq)]
-    pub struct DnsQuestion {
-        pub name: String,
-        pub qtype: QueryType
-    }
+```rust
+#[derive(Debug,Clone,PartialEq,Eq)]
+pub struct DnsQuestion {
+    pub name: String,
+    pub qtype: QueryType
+}
 
-    impl DnsQuestion {
-        pub fn new(name: String, qtype: QueryType) -> DnsQuestion {
-            DnsQuestion {
-                name: name,
-                qtype: qtype
-            }
-        }
-
-        pub fn read(&mut self, buffer: &mut BytePacketBuffer) -> Result<()> {
-            try!(buffer.read_qname(&mut self.name));
-            self.qtype = QueryType::from_num(try!(buffer.read_u16())); // qtype
-            let _ = try!(buffer.read_u16()); // class
-
-            Ok(())
+impl DnsQuestion {
+    pub fn new(name: String, qtype: QueryType) -> DnsQuestion {
+        DnsQuestion {
+            name: name,
+            qtype: qtype
         }
     }
+
+    pub fn read(&mut self, buffer: &mut BytePacketBuffer) -> Result<()> {
+        try!(buffer.read_qname(&mut self.name));
+        self.qtype = QueryType::from_num(try!(buffer.read_u16())); // qtype
+        let _ = try!(buffer.read_u16()); // class
+
+        Ok(())
+    }
+}
+```
 
 Having done the hard part of reading the domain names as part of our
 `BytePacketBuffer` struct, it turns out to be quite compact.
@@ -669,173 +745,183 @@ Having done the hard part of reading the domain names as part of our
 We'll obviously need a way of representing the actual dns records as well, and
 again we'll use an enum for easy expansion:
 
-    #[derive(Debug,Clone,PartialEq,Eq,Hash,PartialOrd,Ord)]
-    #[allow(dead_code)]
-    pub enum DnsRecord {
-        UNKNOWN {
-            domain: String,
-            qtype: u16,
-            data_len: u16,
-            ttl: u32
-        }, // 0
-        A {
-            domain: String,
-            addr: Ipv4Addr,
-            ttl: u32
-        }, // 1
-    }
+```rust
+#[derive(Debug,Clone,PartialEq,Eq,Hash,PartialOrd,Ord)]
+#[allow(dead_code)]
+pub enum DnsRecord {
+    UNKNOWN {
+        domain: String,
+        qtype: u16,
+        data_len: u16,
+        ttl: u32
+    }, // 0
+    A {
+        domain: String,
+        addr: Ipv4Addr,
+        ttl: u32
+    }, // 1
+}
+```
 
 Since there are many types of records, we'll add the ability to keep track of
 record types we haven't yet encountered. The enum will also allow us to easily
 add new records later on. The actual implementation of `DnsRecord` looks like
 this:
 
-    impl DnsRecord {
+```rust
+impl DnsRecord {
 
-        pub fn read(buffer: &mut BytePacketBuffer) -> Result<DnsRecord> {
-            let mut domain = String::new();
-            try!(buffer.read_qname(&mut domain));
+    pub fn read(buffer: &mut BytePacketBuffer) -> Result<DnsRecord> {
+        let mut domain = String::new();
+        try!(buffer.read_qname(&mut domain));
 
-            let qtype_num = try!(buffer.read_u16());
-            let qtype = QueryType::from_num(qtype_num);
-            let _ = try!(buffer.read_u16()); // class, which we ignore
-            let ttl = try!(buffer.read_u32());
-            let data_len = try!(buffer.read_u16());
+        let qtype_num = try!(buffer.read_u16());
+        let qtype = QueryType::from_num(qtype_num);
+        let _ = try!(buffer.read_u16()); // class, which we ignore
+        let ttl = try!(buffer.read_u32());
+        let data_len = try!(buffer.read_u16());
 
-            match qtype {
-                QueryType::A  => {
-                    let raw_addr = try!(buffer.read_u32());
-                    let addr = Ipv4Addr::new(((raw_addr >> 24) & 0xFF) as u8,
-                                             ((raw_addr >> 16) & 0xFF) as u8,
-                                             ((raw_addr >> 8) & 0xFF) as u8,
-                                             ((raw_addr >> 0) & 0xFF) as u8);
+        match qtype {
+            QueryType::A  => {
+                let raw_addr = try!(buffer.read_u32());
+                let addr = Ipv4Addr::new(((raw_addr >> 24) & 0xFF) as u8,
+                                         ((raw_addr >> 16) & 0xFF) as u8,
+                                         ((raw_addr >> 8) & 0xFF) as u8,
+                                         ((raw_addr >> 0) & 0xFF) as u8);
 
-                    Ok(DnsRecord::A {
-                        domain: domain,
-                        addr: addr,
-                        ttl: ttl
-                    })
-                },
-                QueryType::UNKNOWN(_) => {
-                    try!(buffer.step(data_len as usize));
+                Ok(DnsRecord::A {
+                    domain: domain,
+                    addr: addr,
+                    ttl: ttl
+                })
+            },
+            QueryType::UNKNOWN(_) => {
+                try!(buffer.step(data_len as usize));
 
-                    Ok(DnsRecord::UNKNOWN {
-                        domain: domain,
-                        qtype: qtype_num,
-                        data_len: data_len,
-                        ttl: ttl
-                    })
-                }
+                Ok(DnsRecord::UNKNOWN {
+                    domain: domain,
+                    qtype: qtype_num,
+                    data_len: data_len,
+                    ttl: ttl
+                })
             }
         }
     }
+}
+```
 
 ### DnsPacket
 
 Finally, let's put it all together in a struct called `DnsPacket`:
 
-    #[derive(Clone, Debug)]
-    pub struct DnsPacket {
-        pub header: DnsHeader,
-        pub questions: Vec<DnsQuestion>,
-        pub answers: Vec<DnsRecord>,
-        pub authorities: Vec<DnsRecord>,
-        pub resources: Vec<DnsRecord>
-    }
+```rust
+#[derive(Clone, Debug)]
+pub struct DnsPacket {
+    pub header: DnsHeader,
+    pub questions: Vec<DnsQuestion>,
+    pub answers: Vec<DnsRecord>,
+    pub authorities: Vec<DnsRecord>,
+    pub resources: Vec<DnsRecord>
+}
 
-    impl DnsPacket {
-        pub fn new() -> DnsPacket {
-            DnsPacket {
-                header: DnsHeader::new(),
-                questions: Vec::new(),
-                answers: Vec::new(),
-                authorities: Vec::new(),
-                resources: Vec::new()
-            }
-        }
-
-        pub fn from_buffer(buffer: &mut BytePacketBuffer) -> Result<DnsPacket> {
-            let mut result = DnsPacket::new();
-            try!(result.header.read(buffer));
-
-            for _ in 0..result.header.questions {
-                let mut question = DnsQuestion::new("".to_string(),
-                                                    QueryType::UNKNOWN(0));
-                try!(question.read(buffer));
-                result.questions.push(question);
-            }
-
-            for _ in 0..result.header.answers {
-                let rec = try!(DnsRecord::read(buffer));
-                result.answers.push(rec);
-            }
-            for _ in 0..result.header.authoritative_entries {
-                let rec = try!(DnsRecord::read(buffer));
-                result.authorities.push(rec);
-            }
-            for _ in 0..result.header.resource_entries {
-                let rec = try!(DnsRecord::read(buffer));
-                result.resources.push(rec);
-            }
-
-            Ok(result)
+impl DnsPacket {
+    pub fn new() -> DnsPacket {
+        DnsPacket {
+            header: DnsHeader::new(),
+            questions: Vec::new(),
+            answers: Vec::new(),
+            authorities: Vec::new(),
+            resources: Vec::new()
         }
     }
+
+    pub fn from_buffer(buffer: &mut BytePacketBuffer) -> Result<DnsPacket> {
+        let mut result = DnsPacket::new();
+        try!(result.header.read(buffer));
+
+        for _ in 0..result.header.questions {
+            let mut question = DnsQuestion::new("".to_string(),
+                                                QueryType::UNKNOWN(0));
+            try!(question.read(buffer));
+            result.questions.push(question);
+        }
+
+        for _ in 0..result.header.answers {
+            let rec = try!(DnsRecord::read(buffer));
+            result.answers.push(rec);
+        }
+        for _ in 0..result.header.authoritative_entries {
+            let rec = try!(DnsRecord::read(buffer));
+            result.authorities.push(rec);
+        }
+        for _ in 0..result.header.resource_entries {
+            let rec = try!(DnsRecord::read(buffer));
+            result.resources.push(rec);
+        }
+
+        Ok(result)
+    }
+}
+```
 
 ### Putting it all together
 
 Let's use the `response_packet.txt` we generated earlier to try it out!
 
-    fn main() {
-        let mut f = File::open("response_packet.txt").unwrap();
-        let mut buffer = BytePacketBuffer::new();
-        f.read(&mut buffer.buf).unwrap();
+```rust
+fn main() {
+    let mut f = File::open("response_packet.txt").unwrap();
+    let mut buffer = BytePacketBuffer::new();
+    f.read(&mut buffer.buf).unwrap();
 
-        let packet = DnsPacket::from_buffer(&mut buffer).unwrap();
-        println!("{:?}", packet.header);
+    let packet = DnsPacket::from_buffer(&mut buffer).unwrap();
+    println!("{:?}", packet.header);
 
-        for q in packet.questions {
-            println!("{:?}", q);
-        }
-        for rec in packet.answers {
-            println!("{:?}", rec);
-        }
-        for rec in packet.authorities {
-            println!("{:?}", rec);
-        }
-        for rec in packet.resources {
-            println!("{:?}", rec);
-        }
+    for q in packet.questions {
+        println!("{:?}", q);
     }
+    for rec in packet.answers {
+        println!("{:?}", rec);
+    }
+    for rec in packet.authorities {
+        println!("{:?}", rec);
+    }
+    for rec in packet.resources {
+        println!("{:?}", rec);
+    }
+}
+```
 
 Running it will print:
 
-    DnsHeader {
-        id: 34346,
-        recursion_desired: true,
-        truncated_message: false,
-        authoritative_answer: false,
-        opcode: 0,
-        response: true,
-        rescode: NOERROR,
-        checking_disabled: false,
-        authed_data: false,
-        z: false,
-        recursion_available: true,
-        questions: 1,
-        answers: 1,
-        authoritative_entries: 0,
-        resource_entries: 0
-    }
-    DnsQuestion {
-        name: "google.com",
-        qtype: A
-    }
-    A {
-        domain: "google.com",
-        addr: 216.58.211.142,
-        ttl: 293
-    }
+```text
+DnsHeader {
+    id: 34346,
+    recursion_desired: true,
+    truncated_message: false,
+    authoritative_answer: false,
+    opcode: 0,
+    response: true,
+    rescode: NOERROR,
+    checking_disabled: false,
+    authed_data: false,
+    z: false,
+    recursion_available: true,
+    questions: 1,
+    answers: 1,
+    authoritative_entries: 0,
+    resource_entries: 0
+}
+DnsQuestion {
+    name: "google.com",
+    qtype: A
+}
+A {
+    domain: "google.com",
+    addr: 216.58.211.142,
+    ttl: 293
+}
+```
 
 Building a stub resolver
 ------------------------
@@ -853,568 +939,138 @@ In order to be able to service a query, we need to be able to not just read
 packets, but also write them. To do so, we'll need to extend `BytePacketBuffer`
 with some additional methods:
 
-    impl BytePacketBuffer {
+```rust
+impl BytePacketBuffer {
 
-        - snip -
+    - snip -
 
-        fn write(&mut self, val: u8) -> Result<()> {
-            if self.pos >= 512 {
-                return Err(Error::new(ErrorKind::InvalidInput, "End of buffer"));
-            }
-            self.buf[self.pos] = val;
-            self.pos += 1;
-            Ok(())
+    fn write(&mut self, val: u8) -> Result<()> {
+        if self.pos >= 512 {
+            return Err(Error::new(ErrorKind::InvalidInput, "End of buffer"));
         }
+        self.buf[self.pos] = val;
+        self.pos += 1;
+        Ok(())
+    }
 
-        fn write_u8(&mut self, val: u8) -> Result<()> {
-            try!(self.write(val));
+    fn write_u8(&mut self, val: u8) -> Result<()> {
+        try!(self.write(val));
 
-            Ok(())
-        }
+        Ok(())
+    }
 
-        fn write_u16(&mut self, val: u16) -> Result<()> {
-            try!(self.write((val >> 8) as u8));
-            try!(self.write((val & 0xFF) as u8));
+    fn write_u16(&mut self, val: u16) -> Result<()> {
+        try!(self.write((val >> 8) as u8));
+        try!(self.write((val & 0xFF) as u8));
 
-            Ok(())
-        }
+        Ok(())
+    }
 
-        fn write_u32(&mut self, val: u32) -> Result<()> {
-            try!(self.write(((val >> 24) & 0xFF) as u8));
-            try!(self.write(((val >> 16) & 0xFF) as u8));
-            try!(self.write(((val >> 8) & 0xFF) as u8));
-            try!(self.write(((val >> 0) & 0xFF) as u8));
+    fn write_u32(&mut self, val: u32) -> Result<()> {
+        try!(self.write(((val >> 24) & 0xFF) as u8));
+        try!(self.write(((val >> 16) & 0xFF) as u8));
+        try!(self.write(((val >> 8) & 0xFF) as u8));
+        try!(self.write(((val >> 0) & 0xFF) as u8));
 
-            Ok(())
-        }
+        Ok(())
+    }
+```
 
 We'll also need a function for writing query names in labeled form:
 
-        fn write_qname(&mut self, qname: &str) -> Result<()> {
+```rust
+    fn write_qname(&mut self, qname: &str) -> Result<()> {
 
-            let split_str = qname.split('.').collect::<Vec<&str>>();
+        let split_str = qname.split('.').collect::<Vec<&str>>();
 
-            for label in split_str {
-                let len = label.len();
-                if len > 0x34 {
-                    return Err(Error::new(ErrorKind::InvalidInput, "Single label exceeds 63 characters of length"));
-                }
-
-                try!(self.write_u8(len as u8));
-                for b in label.as_bytes() {
-                    try!(self.write_u8(*b));
-                }
+        for label in split_str {
+            let len = label.len();
+            if len > 0x34 {
+                return Err(Error::new(ErrorKind::InvalidInput, "Single label exceeds 63 characters of length"));
             }
 
-            try!(self.write_u8(0));
-
-            Ok(())
+            try!(self.write_u8(len as u8));
+            for b in label.as_bytes() {
+                try!(self.write_u8(*b));
+            }
         }
 
-    } // End of BytePacketBuffer
+        try!(self.write_u8(0));
+
+        Ok(())
+    }
+
+} // End of BytePacketBuffer
+```
 
 ### Extending DnsHeader for writing
 
 Building on our new functions we can extend our protocol representation
 structs. Starting with `DnsHeader`:
 
-    impl DnsHeader {
+```rust
+impl DnsHeader {
 
-        - snip -
+    - snip -
 
-        pub fn write(&self, buffer: &mut BytePacketBuffer) -> Result<()> {
-            try!(buffer.write_u16(self.id));
+    pub fn write(&self, buffer: &mut BytePacketBuffer) -> Result<()> {
+        try!(buffer.write_u16(self.id));
 
-            try!(buffer.write_u8( ((self.recursion_desired as u8)) |
-                                  ((self.truncated_message as u8) << 1) |
-                                  ((self.authoritative_answer as u8) << 2) |
-                                  (self.opcode << 3) |
-                                  ((self.response as u8) << 7) as u8) );
+        try!(buffer.write_u8( ((self.recursion_desired as u8)) |
+                              ((self.truncated_message as u8) << 1) |
+                              ((self.authoritative_answer as u8) << 2) |
+                              (self.opcode << 3) |
+                              ((self.response as u8) << 7) as u8) );
 
-            try!(buffer.write_u8( (self.rescode.clone() as u8) |
-                                  ((self.checking_disabled as u8) << 4) |
-                                  ((self.authed_data as u8) << 5) |
-                                  ((self.z as u8) << 6) |
-                                  ((self.recursion_available as u8) << 7) ));
+        try!(buffer.write_u8( (self.rescode.clone() as u8) |
+                              ((self.checking_disabled as u8) << 4) |
+                              ((self.authed_data as u8) << 5) |
+                              ((self.z as u8) << 6) |
+                              ((self.recursion_available as u8) << 7) ));
 
-            try!(buffer.write_u16(self.questions));
-            try!(buffer.write_u16(self.answers));
-            try!(buffer.write_u16(self.authoritative_entries));
-            try!(buffer.write_u16(self.resource_entries));
+        try!(buffer.write_u16(self.questions));
+        try!(buffer.write_u16(self.answers));
+        try!(buffer.write_u16(self.authoritative_entries));
+        try!(buffer.write_u16(self.resource_entries));
 
-            Ok(())
-        }
-
+        Ok(())
     }
+
+}
+```
 
 ### Extending DnsQuestion for writing
 
 Moving on to `DnsQuestion`:
 
-    impl DnsQuestion {
+```rust
+impl DnsQuestion {
 
-        - snip -
+    - snip -
 
-        pub fn write(&self, buffer: &mut BytePacketBuffer) -> Result<()> {
+    pub fn write(&self, buffer: &mut BytePacketBuffer) -> Result<()> {
 
-            try!(buffer.write_qname(&self.name));
+        try!(buffer.write_qname(&self.name));
 
-            let typenum = self.qtype.to_num();
-            try!(buffer.write_u16(typenum));
-            try!(buffer.write_u16(1));
+        let typenum = self.qtype.to_num();
+        try!(buffer.write_u16(typenum));
+        try!(buffer.write_u16(1));
 
-            Ok(())
-        }
-
+        Ok(())
     }
+
+}
+```
 
 ### Extending DnsRecord for writing
 
 `DnsRecord` is for now quite compact as well, although we'll eventually add
 quite a bit of code here to handle different record types:
 
-    impl DnsRecord {
+```rust
+impl DnsRecord {
 
-        - snip -
-
-        pub fn write(&self, buffer: &mut BytePacketBuffer) -> Result<usize> {
-
-            let start_pos = buffer.pos();
-
-            match *self {
-                DnsRecord::A { ref domain, ref addr, ttl } => {
-                    try!(buffer.write_qname(domain));
-                    try!(buffer.write_u16(QueryType::A.to_num()));
-                    try!(buffer.write_u16(1));
-                    try!(buffer.write_u32(ttl));
-                    try!(buffer.write_u16(4));
-
-                    let octets = addr.octets();
-                    try!(buffer.write_u8(octets[0]));
-                    try!(buffer.write_u8(octets[1]));
-                    try!(buffer.write_u8(octets[2]));
-                    try!(buffer.write_u8(octets[3]));
-                },
-                DnsRecord::UNKNOWN { .. } => {
-                    println!("Skipping record: {:?}", self);
-                }
-            }
-
-            Ok(buffer.pos() - start_pos)
-        }
-
-    }
-
-### Extending DnsPacket for writing
-
-Putting it all together in `DnsPacket`:
-
-    impl DnsPacket {
-
-        - snip -
-
-        pub fn write(&mut self, buffer: &mut BytePacketBuffer) -> Result<()>
-        {
-            self.header.questions = self.questions.len() as u16;
-            self.header.answers = self.answers.len() as u16;
-            self.header.authoritative_entries = self.authorities.len() as u16;
-            self.header.resource_entries = self.resources.len() as u16;
-
-            try!(self.header.write(buffer));
-
-            for question in &self.questions {
-                try!(question.write(buffer));
-            }
-            for rec in &self.answers {
-                try!(rec.write(buffer));
-            }
-            for rec in &self.authorities {
-                try!(rec.write(buffer));
-            }
-            for rec in &self.resources {
-                try!(rec.write(buffer));
-            }
-
-            Ok(())
-        }
-
-    }
-
-### Implementing a stub resolver
-
-We're ready to implement our stub resolver. Rust includes a convenient
-`UDPSocket` which does most of the work. First there's some house keeping:
-
-    fn main() {
-        // Perform an A query for google.com
-        let qname = "google.com";
-        let qtype = QueryType::A;
-
-        // Using googles public DNS server
-        let server = ("8.8.8.8", 53);
-
-        // Bind a UDP socket to an arbitrary port
-        let socket = UdpSocket::bind(("0.0.0.0", 43210)).unwrap();
-
-
-Next we'll build our query packet. It's important that we remember to set the
-`recursion_desired` flag. As noted earlier, the packet id is arbitrary.
-
-        let mut packet = DnsPacket::new();
-
-        packet.header.id = 6666;
-        packet.header.questions = 1;
-        packet.header.recursion_desired = true;
-        packet.questions.push(DnsQuestion::new(qname.to_string(), qtype));
-
-We can use our new write method to write the packet to a buffer...
-
-        let mut req_buffer = BytePacketBuffer::new();
-        packet.write(&mut req_buffer).unwrap();
-
-...and send it off to the server using our socket:
-
-        socket.send_to(&req_buffer.buf[0..req_buffer.pos], server).unwrap();
-
-To prepare for receiving the response, we'll create a new `BytePacketBuffer`.
-We'll then ask the socket to write the response directly into our buffer.
-
-        let mut res_buffer = BytePacketBuffer::new();
-        socket.recv_from(&mut res_buffer.buf).unwrap();
-
-As per the previous section, `DnsPacket::from_buffer()` is then used to
-actually parse the packet after which we can print the response.
-
-        let res_packet = DnsPacket::from_buffer(&mut res_buffer).unwrap();
-        println!("{:?}", res_packet.header);
-
-        for q in res_packet.questions {
-            println!("{:?}", q);
-        }
-        for rec in res_packet.answers {
-            println!("{:?}", rec);
-        }
-        for rec in res_packet.authorities {
-            println!("{:?}", rec);
-        }
-        for rec in res_packet.resources {
-            println!("{:?}", rec);
-        }
-    }
-
-Running it will print:
-
-    DnsHeader {
-        id: 6666,
-        recursion_desired: true,
-        truncated_message: false,
-        authoritative_answer: false,
-        opcode: 0,
-        response: true,
-        rescode: NOERROR,
-        checking_disabled: false,
-        authed_data: false,
-        z: false,
-        recursion_available: true,
-        questions: 1,
-        answers: 1,
-        authoritative_entries: 0,
-        resource_entries: 0
-    }
-    DnsQuestion {
-        name: "google.com",
-        qtype: A
-    }
-    A {
-        domain: "google.com",
-        addr: 216.58.209.110,
-        ttl: 79
-    }
-
-We're approaching something useful!
-
-Adding more Record Types
-------------------------
-
-Let's use our program to do a lookup for ''yahoo.com''.
-
-    let qname = "www.yahoo.com";
-
-Running it yields:
-
-    DnsHeader {
-        id: 6666,
-        recursion_desired: true,
-        truncated_message: false,
-        authoritative_answer: false,
-        opcode: 0,
-        response: true,
-        rescode: NOERROR,
-        checking_disabled: false,
-        authed_data: false,
-        z: false,
-        recursion_available: true,
-        questions: 1,
-        answers: 3,
-        authoritative_entries: 0,
-        resource_entries: 0
-    }
-    DnsQuestion {
-        name: "www.yahoo.com",
-        qtype: A
-    }
-    UNKNOWN {
-        domain: "www.yahoo.com",
-        qtype: 5,
-        data_len: 15,
-        ttl: 259
-    }
-    A {
-        domain: "fd-fp3.wg1.b.yahoo.com",
-        addr: 46.228.47.115,
-        ttl: 19
-    }
-    A {
-        domain: "fd-fp3.wg1.b.yahoo.com",
-        addr: 46.228.47.114,
-        ttl: 19
-    }
-
-That's odd -- we're getting an UNKNOWN record as well as two A records. The
-UNKNOWN record, with query type 5 is a CNAME. There are quite a few DNS record
-types, many of which doesn't see any use in practice. That said, let's have
-a look at a few essential ones:
-
-| ID  | Name  | Description                                              | Encoding                                         |
-| --- | ----- | -------------------------------------------------------- | ------------------------------------------------ |
-| 1   | A     | Alias - Mapping names to IP addresses                    | Preamble + Four bytes for IPv4 adress            |
-| 2   | NS    | Name Server - The DNS server address for a domain        | Preamble + Label Sequence                        |
-| 5   | CNAME | Canonical Name - Maps names to names                     | Preamble + Label Sequence                        |
-| 15  | MX    | Mail eXchange - The host of the mail server for a domain | Preamble + 2-bytes for priority + Label Sequence |
-| 28  | AAAA  | IPv6 alias                                               | Premable + Sixteen bytes for IPv6 adress         |
-
-### Extending QueryType with more record types
-
-Let's go ahead and add them to our code! First we'll update our `QueryType`
-enum:
-
-    #[derive(PartialEq,Eq,Debug,Clone,Hash,Copy)]
-    pub enum QueryType {
-        UNKNOWN(u16),
-        A, // 1
-        NS, // 2
-        CNAME, // 5
-        MX, // 15
-        AAAA, // 28
-    }
-
-We'll also need to change our utility functions.
-
-    impl QueryType {
-        pub fn to_num(&self) -> u16 {
-            match *self {
-                QueryType::UNKNOWN(x) => x,
-                QueryType::A => 1,
-                QueryType::NS => 2,
-                QueryType::CNAME => 5,
-                QueryType::MX => 15,
-                QueryType::AAAA => 28,
-            }
-        }
-
-        pub fn from_num(num: u16) -> QueryType {
-            match num {
-                1 => QueryType::A,
-                2 => QueryType::NS,
-                5 => QueryType::CNAME,
-                15 => QueryType::MX,
-                28 => QueryType::AAAA,
-                _ => QueryType::UNKNOWN(num)
-            }
-        }
-    }
-
-### Extending DnsRecord for reading new record types
-
-Now we need a way of holding the data for these records, so we'll make some
-modifications to `DnsRecord`.
-
-    #[derive(Debug,Clone,PartialEq,Eq,Hash,PartialOrd,Ord)]
-    #[allow(dead_code)]
-    pub enum DnsRecord {
-        UNKNOWN {
-            domain: String,
-            qtype: u16,
-            data_len: u16,
-            ttl: u32
-        }, // 0
-        A {
-            domain: String,
-            addr: Ipv4Addr,
-            ttl: u32
-        }, // 1
-        NS {
-            domain: String,
-            host: String,
-            ttl: u32
-        }, // 2
-        CNAME {
-            domain: String,
-            host: String,
-            ttl: u32
-        }, // 5
-        MX {
-            domain: String,
-            priority: u16,
-            host: String,
-            ttl: u32
-        }, // 15
-        AAAA {
-            domain: String,
-            addr: Ipv6Addr,
-            ttl: u32
-        }, // 28
-    }
-
-Here comes the bulk of the work. We'll need to extend the functions for writing
-and reading records. Starting with read, we amend it with additional code for
-each record type. First off, we've got the common preamble:
-
-    pub fn read(buffer: &mut BytePacketBuffer) -> Result<DnsRecord> {
-        let mut domain = String::new();
-        try!(buffer.read_qname(&mut domain));
-
-        let qtype_num = try!(buffer.read_u16());
-        let qtype = QueryType::from_num(qtype_num);
-        let _ = try!(buffer.read_u16());
-        let ttl = try!(buffer.read_u32());
-        let data_len = try!(buffer.read_u16());
-
-After which we handle each record type separately, starting with the A record
-type which remains the same as before.
-
-        match qtype {
-            QueryType::A  => {
-                let raw_addr = try!(buffer.read_u32());
-                let addr = Ipv4Addr::new(((raw_addr >> 24) & 0xFF) as u8,
-                                         ((raw_addr >> 16) & 0xFF) as u8,
-                                         ((raw_addr >> 8) & 0xFF) as u8,
-                                         ((raw_addr >> 0) & 0xFF) as u8);
-
-                Ok(DnsRecord::A {
-                    domain: domain,
-                    addr: addr,
-                    ttl: ttl
-                })
-            },
-
-The AAAA record type follows the same logic, but with more numbers to keep
-track off.
-
-            QueryType::AAAA => {
-                let raw_addr1 = try!(buffer.read_u32());
-                let raw_addr2 = try!(buffer.read_u32());
-                let raw_addr3 = try!(buffer.read_u32());
-                let raw_addr4 = try!(buffer.read_u32());
-                let addr = Ipv6Addr::new(((raw_addr1 >> 16) & 0xFFFF) as u16,
-                                         ((raw_addr1 >> 0) & 0xFFFF) as u16,
-                                         ((raw_addr2 >> 16) & 0xFFFF) as u16,
-                                         ((raw_addr2 >> 0) & 0xFFFF) as u16,
-                                         ((raw_addr3 >> 16) & 0xFFFF) as u16,
-                                         ((raw_addr3 >> 0) & 0xFFFF) as u16,
-                                         ((raw_addr4 >> 16) & 0xFFFF) as u16,
-                                         ((raw_addr4 >> 0) & 0xFFFF) as u16);
-
-                Ok(DnsRecord::AAAA {
-                    domain: domain,
-                    addr: addr,
-                    ttl: ttl
-                })
-            },
-
-NS and CNAME both have the same structure.
-
-            QueryType::NS => {
-                let mut ns = String::new();
-                try!(buffer.read_qname(&mut ns));
-
-                Ok(DnsRecord::NS {
-                    domain: domain,
-                    host: ns,
-                    ttl: ttl
-                })
-            },
-            QueryType::CNAME => {
-                let mut cname = String::new();
-                try!(buffer.read_qname(&mut cname));
-
-                Ok(DnsRecord::CNAME {
-                    domain: domain,
-                    host: cname,
-                    ttl: ttl
-                })
-            },
-
-MX is close to the previous two, but with one extra field for priority.
-
-            QueryType::MX => {
-                let priority = try!(buffer.read_u16());
-                let mut mx = String::new();
-                try!(buffer.read_qname(&mut mx));
-
-                Ok(DnsRecord::MX {
-                    domain: domain,
-                    priority: priority,
-                    host: mx,
-                    ttl: ttl
-                })
-            },
-
-And we end with some code for handling unknown record types, as before.
-
-            QueryType::UNKNOWN(_) => {
-                try!(buffer.step(data_len as usize));
-
-                Ok(DnsRecord::UNKNOWN {
-                    domain: domain,
-                    qtype: qtype_num,
-                    data_len: data_len,
-                    ttl: ttl
-                })
-            }
-        }
-    }
-
-It's a bit of a mouthful, but individually not much more complex than what we
-had.
-
-### Extending BytePacketBuffer for setting values in place
-
-Before we move on to writing records, we'll have to add two more functions to
-`BytePacketBuffer`:
-
-    impl BytePacketBuffer {
-
-        - snip -
-
-        fn set(&mut self, pos: usize, val: u8) -> Result<()> {
-            self.buf[pos] = val;
-
-            Ok(())
-        }
-
-        fn set_u16(&mut self, pos: usize, val: u16) -> Result<()> {
-            try!(self.set(pos,(val >> 8) as u8));
-            try!(self.set(pos+1,(val & 0xFF) as u8));
-
-            Ok(())
-        }
-
-    }
-
-### Extending DnsRecord for writing new record types
-
-Now we can amend `DnsRecord::write`. Here's our new function:
+    - snip -
 
     pub fn write(&self, buffer: &mut BytePacketBuffer) -> Result<usize> {
 
@@ -1434,60 +1090,6 @@ Now we can amend `DnsRecord::write`. Here's our new function:
                 try!(buffer.write_u8(octets[2]));
                 try!(buffer.write_u8(octets[3]));
             },
-            DnsRecord::NS { ref domain, ref host, ttl } => {
-                try!(buffer.write_qname(domain));
-                try!(buffer.write_u16(QueryType::NS.to_num()));
-                try!(buffer.write_u16(1));
-                try!(buffer.write_u32(ttl));
-
-                let pos = buffer.pos();
-                try!(buffer.write_u16(0));
-
-                try!(buffer.write_qname(host));
-
-                let size = buffer.pos() - (pos + 2);
-                try!(buffer.set_u16(pos, size as u16));
-            },
-            DnsRecord::CNAME { ref domain, ref host, ttl } => {
-                try!(buffer.write_qname(domain));
-                try!(buffer.write_u16(QueryType::CNAME.to_num()));
-                try!(buffer.write_u16(1));
-                try!(buffer.write_u32(ttl));
-
-                let pos = buffer.pos();
-                try!(buffer.write_u16(0));
-
-                try!(buffer.write_qname(host));
-
-                let size = buffer.pos() - (pos + 2);
-                try!(buffer.set_u16(pos, size as u16));
-            },
-            DnsRecord::MX { ref domain, priority, ref host, ttl } => {
-                try!(buffer.write_qname(domain));
-                try!(buffer.write_u16(QueryType::MX.to_num()));
-                try!(buffer.write_u16(1));
-                try!(buffer.write_u32(ttl));
-
-                let pos = buffer.pos();
-                try!(buffer.write_u16(0));
-
-                try!(buffer.write_u16(priority));
-                try!(buffer.write_qname(host));
-
-                let size = buffer.pos() - (pos + 2);
-                try!(buffer.set_u16(pos, size as u16));
-            },
-            DnsRecord::AAAA { ref domain, ref addr, ttl } => {
-                try!(buffer.write_qname(domain));
-                try!(buffer.write_u16(QueryType::AAAA.to_num()));
-                try!(buffer.write_u16(1));
-                try!(buffer.write_u32(ttl));
-                try!(buffer.write_u16(16));
-
-                for octet in &addr.segments() {
-                    try!(buffer.write_u16(*octet));
-                }
-            },
             DnsRecord::UNKNOWN { .. } => {
                 println!("Skipping record: {:?}", self);
             }
@@ -1495,6 +1097,542 @@ Now we can amend `DnsRecord::write`. Here's our new function:
 
         Ok(buffer.pos() - start_pos)
     }
+
+}
+```
+
+### Extending DnsPacket for writing
+
+Putting it all together in `DnsPacket`:
+
+```rust
+impl DnsPacket {
+
+    - snip -
+
+    pub fn write(&mut self, buffer: &mut BytePacketBuffer) -> Result<()>
+    {
+        self.header.questions = self.questions.len() as u16;
+        self.header.answers = self.answers.len() as u16;
+        self.header.authoritative_entries = self.authorities.len() as u16;
+        self.header.resource_entries = self.resources.len() as u16;
+
+        try!(self.header.write(buffer));
+
+        for question in &self.questions {
+            try!(question.write(buffer));
+        }
+        for rec in &self.answers {
+            try!(rec.write(buffer));
+        }
+        for rec in &self.authorities {
+            try!(rec.write(buffer));
+        }
+        for rec in &self.resources {
+            try!(rec.write(buffer));
+        }
+
+        Ok(())
+    }
+
+}
+```
+
+### Implementing a stub resolver
+
+We're ready to implement our stub resolver. Rust includes a convenient
+`UDPSocket` which does most of the work. First there's some house keeping:
+
+```rust
+fn main() {
+    // Perform an A query for google.com
+    let qname = "google.com";
+    let qtype = QueryType::A;
+
+    // Using googles public DNS server
+    let server = ("8.8.8.8", 53);
+
+    // Bind a UDP socket to an arbitrary port
+    let socket = UdpSocket::bind(("0.0.0.0", 43210)).unwrap();
+```
+
+
+Next we'll build our query packet. It's important that we remember to set the
+`recursion_desired` flag. As noted earlier, the packet id is arbitrary.
+
+```rust
+    let mut packet = DnsPacket::new();
+
+    packet.header.id = 6666;
+    packet.header.questions = 1;
+    packet.header.recursion_desired = true;
+    packet.questions.push(DnsQuestion::new(qname.to_string(), qtype));
+```
+
+We can use our new write method to write the packet to a buffer...
+
+```rust
+        let mut req_buffer = BytePacketBuffer::new();
+        packet.write(&mut req_buffer).unwrap();
+```
+
+...and send it off to the server using our socket:
+
+```rust
+    socket.send_to(&req_buffer.buf[0..req_buffer.pos], server).unwrap();
+```
+
+To prepare for receiving the response, we'll create a new `BytePacketBuffer`.
+We'll then ask the socket to write the response directly into our buffer.
+
+```rust
+    let mut res_buffer = BytePacketBuffer::new();
+    socket.recv_from(&mut res_buffer.buf).unwrap();
+```
+
+As per the previous section, `DnsPacket::from_buffer()` is then used to
+actually parse the packet after which we can print the response.
+
+```rust
+    let res_packet = DnsPacket::from_buffer(&mut res_buffer).unwrap();
+    println!("{:?}", res_packet.header);
+
+    for q in res_packet.questions {
+        println!("{:?}", q);
+    }
+    for rec in res_packet.answers {
+        println!("{:?}", rec);
+    }
+    for rec in res_packet.authorities {
+        println!("{:?}", rec);
+    }
+    for rec in res_packet.resources {
+        println!("{:?}", rec);
+    }
+}
+```
+
+Running it will print:
+
+```text
+DnsHeader {
+    id: 6666,
+    recursion_desired: true,
+    truncated_message: false,
+    authoritative_answer: false,
+    opcode: 0,
+    response: true,
+    rescode: NOERROR,
+    checking_disabled: false,
+    authed_data: false,
+    z: false,
+    recursion_available: true,
+    questions: 1,
+    answers: 1,
+    authoritative_entries: 0,
+    resource_entries: 0
+}
+DnsQuestion {
+    name: "google.com",
+    qtype: A
+}
+A {
+    domain: "google.com",
+    addr: 216.58.209.110,
+    ttl: 79
+}
+```
+
+We're approaching something useful!
+
+Adding more Record Types
+------------------------
+
+Let's use our program to do a lookup for ''yahoo.com''.
+
+```rust
+let qname = "www.yahoo.com";
+```
+
+Running it yields:
+
+```text
+DnsHeader {
+    id: 6666,
+    recursion_desired: true,
+    truncated_message: false,
+    authoritative_answer: false,
+    opcode: 0,
+    response: true,
+    rescode: NOERROR,
+    checking_disabled: false,
+    authed_data: false,
+    z: false,
+    recursion_available: true,
+    questions: 1,
+    answers: 3,
+    authoritative_entries: 0,
+    resource_entries: 0
+}
+DnsQuestion {
+    name: "www.yahoo.com",
+    qtype: A
+}
+UNKNOWN {
+    domain: "www.yahoo.com",
+    qtype: 5,
+    data_len: 15,
+    ttl: 259
+}
+A {
+    domain: "fd-fp3.wg1.b.yahoo.com",
+    addr: 46.228.47.115,
+    ttl: 19
+}
+A {
+    domain: "fd-fp3.wg1.b.yahoo.com",
+    addr: 46.228.47.114,
+    ttl: 19
+}
+```
+
+That's odd -- we're getting an UNKNOWN record as well as two A records. The
+UNKNOWN record, with query type 5 is a CNAME. There are quite a few DNS record
+types, many of which doesn't see any use in practice. That said, let's have
+a look at a few essential ones:
+
+| ID  | Name  | Description                                              | Encoding                                         |
+| --- | ----- | -------------------------------------------------------- | ------------------------------------------------ |
+| 1   | A     | Alias - Mapping names to IP addresses                    | Preamble + Four bytes for IPv4 adress            |
+| 2   | NS    | Name Server - The DNS server address for a domain        | Preamble + Label Sequence                        |
+| 5   | CNAME | Canonical Name - Maps names to names                     | Preamble + Label Sequence                        |
+| 15  | MX    | Mail eXchange - The host of the mail server for a domain | Preamble + 2-bytes for priority + Label Sequence |
+| 28  | AAAA  | IPv6 alias                                               | Premable + Sixteen bytes for IPv6 adress         |
+
+### Extending QueryType with more record types
+
+Let's go ahead and add them to our code! First we'll update our `QueryType`
+enum:
+
+```rust
+#[derive(PartialEq,Eq,Debug,Clone,Hash,Copy)]
+pub enum QueryType {
+    UNKNOWN(u16),
+    A, // 1
+    NS, // 2
+    CNAME, // 5
+    MX, // 15
+    AAAA, // 28
+}
+```
+
+We'll also need to change our utility functions.
+
+```rust
+impl QueryType {
+    pub fn to_num(&self) -> u16 {
+        match *self {
+            QueryType::UNKNOWN(x) => x,
+            QueryType::A => 1,
+            QueryType::NS => 2,
+            QueryType::CNAME => 5,
+            QueryType::MX => 15,
+            QueryType::AAAA => 28,
+        }
+    }
+
+    pub fn from_num(num: u16) -> QueryType {
+        match num {
+            1 => QueryType::A,
+            2 => QueryType::NS,
+            5 => QueryType::CNAME,
+            15 => QueryType::MX,
+            28 => QueryType::AAAA,
+            _ => QueryType::UNKNOWN(num)
+        }
+    }
+}
+```
+
+### Extending DnsRecord for reading new record types
+
+Now we need a way of holding the data for these records, so we'll make some
+modifications to `DnsRecord`.
+
+```rust
+#[derive(Debug,Clone,PartialEq,Eq,Hash,PartialOrd,Ord)]
+#[allow(dead_code)]
+pub enum DnsRecord {
+    UNKNOWN {
+        domain: String,
+        qtype: u16,
+        data_len: u16,
+        ttl: u32
+    }, // 0
+    A {
+        domain: String,
+        addr: Ipv4Addr,
+        ttl: u32
+    }, // 1
+    NS {
+        domain: String,
+        host: String,
+        ttl: u32
+    }, // 2
+    CNAME {
+        domain: String,
+        host: String,
+        ttl: u32
+    }, // 5
+    MX {
+        domain: String,
+        priority: u16,
+        host: String,
+        ttl: u32
+    }, // 15
+    AAAA {
+        domain: String,
+        addr: Ipv6Addr,
+        ttl: u32
+    }, // 28
+}
+```
+
+Here comes the bulk of the work. We'll need to extend the functions for writing
+and reading records. Starting with read, we amend it with additional code for
+each record type. First off, we've got the common preamble:
+
+```rust
+pub fn read(buffer: &mut BytePacketBuffer) -> Result<DnsRecord> {
+    let mut domain = String::new();
+    try!(buffer.read_qname(&mut domain));
+
+    let qtype_num = try!(buffer.read_u16());
+    let qtype = QueryType::from_num(qtype_num);
+    let _ = try!(buffer.read_u16());
+    let ttl = try!(buffer.read_u32());
+    let data_len = try!(buffer.read_u16());
+```
+
+After which we handle each record type separately, starting with the A record
+type which remains the same as before.
+
+```rust
+    match qtype {
+        QueryType::A  => {
+            let raw_addr = try!(buffer.read_u32());
+            let addr = Ipv4Addr::new(((raw_addr >> 24) & 0xFF) as u8,
+                                     ((raw_addr >> 16) & 0xFF) as u8,
+                                     ((raw_addr >> 8) & 0xFF) as u8,
+                                     ((raw_addr >> 0) & 0xFF) as u8);
+
+            Ok(DnsRecord::A {
+                domain: domain,
+                addr: addr,
+                ttl: ttl
+            })
+        },
+```
+
+The AAAA record type follows the same logic, but with more numbers to keep
+track off.
+
+```rust
+        QueryType::AAAA => {
+            let raw_addr1 = try!(buffer.read_u32());
+            let raw_addr2 = try!(buffer.read_u32());
+            let raw_addr3 = try!(buffer.read_u32());
+            let raw_addr4 = try!(buffer.read_u32());
+            let addr = Ipv6Addr::new(((raw_addr1 >> 16) & 0xFFFF) as u16,
+                                     ((raw_addr1 >> 0) & 0xFFFF) as u16,
+                                     ((raw_addr2 >> 16) & 0xFFFF) as u16,
+                                     ((raw_addr2 >> 0) & 0xFFFF) as u16,
+                                     ((raw_addr3 >> 16) & 0xFFFF) as u16,
+                                     ((raw_addr3 >> 0) & 0xFFFF) as u16,
+                                     ((raw_addr4 >> 16) & 0xFFFF) as u16,
+                                     ((raw_addr4 >> 0) & 0xFFFF) as u16);
+
+            Ok(DnsRecord::AAAA {
+                domain: domain,
+                addr: addr,
+                ttl: ttl
+            })
+        },
+```
+
+NS and CNAME both have the same structure.
+
+```rust
+        QueryType::NS => {
+            let mut ns = String::new();
+            try!(buffer.read_qname(&mut ns));
+
+            Ok(DnsRecord::NS {
+                domain: domain,
+                host: ns,
+                ttl: ttl
+            })
+        },
+        QueryType::CNAME => {
+            let mut cname = String::new();
+            try!(buffer.read_qname(&mut cname));
+
+            Ok(DnsRecord::CNAME {
+                domain: domain,
+                host: cname,
+                ttl: ttl
+            })
+        },
+```
+
+MX is close to the previous two, but with one extra field for priority.
+
+```rust
+        QueryType::MX => {
+            let priority = try!(buffer.read_u16());
+            let mut mx = String::new();
+            try!(buffer.read_qname(&mut mx));
+
+            Ok(DnsRecord::MX {
+                domain: domain,
+                priority: priority,
+                host: mx,
+                ttl: ttl
+            })
+        },
+```
+
+And we end with some code for handling unknown record types, as before.
+
+```rust
+        QueryType::UNKNOWN(_) => {
+            try!(buffer.step(data_len as usize));
+
+            Ok(DnsRecord::UNKNOWN {
+                domain: domain,
+                qtype: qtype_num,
+                data_len: data_len,
+                ttl: ttl
+            })
+        }
+    }
+}
+```
+
+It's a bit of a mouthful, but individually not much more complex than what we
+had.
+
+### Extending BytePacketBuffer for setting values in place
+
+Before we move on to writing records, we'll have to add two more functions to
+`BytePacketBuffer`:
+
+```rust
+impl BytePacketBuffer {
+
+    - snip -
+
+    fn set(&mut self, pos: usize, val: u8) -> Result<()> {
+        self.buf[pos] = val;
+
+        Ok(())
+    }
+
+    fn set_u16(&mut self, pos: usize, val: u16) -> Result<()> {
+        try!(self.set(pos,(val >> 8) as u8));
+        try!(self.set(pos+1,(val & 0xFF) as u8));
+
+        Ok(())
+    }
+
+}
+```
+
+### Extending DnsRecord for writing new record types
+
+Now we can amend `DnsRecord::write`. Here's our new function:
+
+```rust
+pub fn write(&self, buffer: &mut BytePacketBuffer) -> Result<usize> {
+
+    let start_pos = buffer.pos();
+
+    match *self {
+        DnsRecord::A { ref domain, ref addr, ttl } => {
+            try!(buffer.write_qname(domain));
+            try!(buffer.write_u16(QueryType::A.to_num()));
+            try!(buffer.write_u16(1));
+            try!(buffer.write_u32(ttl));
+            try!(buffer.write_u16(4));
+
+            let octets = addr.octets();
+            try!(buffer.write_u8(octets[0]));
+            try!(buffer.write_u8(octets[1]));
+            try!(buffer.write_u8(octets[2]));
+            try!(buffer.write_u8(octets[3]));
+        },
+        DnsRecord::NS { ref domain, ref host, ttl } => {
+            try!(buffer.write_qname(domain));
+            try!(buffer.write_u16(QueryType::NS.to_num()));
+            try!(buffer.write_u16(1));
+            try!(buffer.write_u32(ttl));
+
+            let pos = buffer.pos();
+            try!(buffer.write_u16(0));
+
+            try!(buffer.write_qname(host));
+
+            let size = buffer.pos() - (pos + 2);
+            try!(buffer.set_u16(pos, size as u16));
+        },
+        DnsRecord::CNAME { ref domain, ref host, ttl } => {
+            try!(buffer.write_qname(domain));
+            try!(buffer.write_u16(QueryType::CNAME.to_num()));
+            try!(buffer.write_u16(1));
+            try!(buffer.write_u32(ttl));
+
+            let pos = buffer.pos();
+            try!(buffer.write_u16(0));
+
+            try!(buffer.write_qname(host));
+
+            let size = buffer.pos() - (pos + 2);
+            try!(buffer.set_u16(pos, size as u16));
+        },
+        DnsRecord::MX { ref domain, priority, ref host, ttl } => {
+            try!(buffer.write_qname(domain));
+            try!(buffer.write_u16(QueryType::MX.to_num()));
+            try!(buffer.write_u16(1));
+            try!(buffer.write_u32(ttl));
+
+            let pos = buffer.pos();
+            try!(buffer.write_u16(0));
+
+            try!(buffer.write_u16(priority));
+            try!(buffer.write_qname(host));
+
+            let size = buffer.pos() - (pos + 2);
+            try!(buffer.set_u16(pos, size as u16));
+        },
+        DnsRecord::AAAA { ref domain, ref addr, ttl } => {
+            try!(buffer.write_qname(domain));
+            try!(buffer.write_u16(QueryType::AAAA.to_num()));
+            try!(buffer.write_u16(1));
+            try!(buffer.write_u32(ttl));
+            try!(buffer.write_u16(16));
+
+            for octet in &addr.segments() {
+                try!(buffer.write_u16(*octet));
+            }
+        },
+        DnsRecord::UNKNOWN { .. } => {
+            println!("Skipping record: {:?}", self);
+        }
+    }
+
+    Ok(buffer.pos() - start_pos)
+}
+```
 
 Again, quite a bit of extra code, but thankfully the last thing we've got to
 do. We're still not using the write part, but it'll come in handy once we write
@@ -1504,73 +1642,79 @@ our server.
 
 Now we're ready to retry our ''yahoo.com'' query:
 
-    DnsHeader {
-        id: 6666,
-        recursion_desired: true,
-        truncated_message: false,
-        authoritative_answer: false,
-        opcode: 0,
-        response: true,
-        rescode: NOERROR,
-        checking_disabled: false,
-        authed_data: false,
-        z: false,
-        recursion_available: true,
-        questions: 1,
-        answers: 3,
-        authoritative_entries: 0,
-        resource_entries: 0
-    }
-    DnsQuestion {
-        name: "www.yahoo.com",
-        qtype: A
-    }
-    CNAME {
-        domain: "www.yahoo.com",
-        host: "fd-fp3.wg1.b.yahoo.com",
-        ttl: 3
-    }
-    A {
-        domain: "fd-fp3.wg1.b.yahoo.com",
-        addr: 46.228.47.115,
-        ttl: 19
-    }
-    A {
-        domain: "fd-fp3.wg1.b.yahoo.com",
-        addr: 46.228.47.114,
-        ttl: 19
-    }
+```text
+DnsHeader {
+    id: 6666,
+    recursion_desired: true,
+    truncated_message: false,
+    authoritative_answer: false,
+    opcode: 0,
+    response: true,
+    rescode: NOERROR,
+    checking_disabled: false,
+    authed_data: false,
+    z: false,
+    recursion_available: true,
+    questions: 1,
+    answers: 3,
+    authoritative_entries: 0,
+    resource_entries: 0
+}
+DnsQuestion {
+    name: "www.yahoo.com",
+    qtype: A
+}
+CNAME {
+    domain: "www.yahoo.com",
+    host: "fd-fp3.wg1.b.yahoo.com",
+    ttl: 3
+}
+A {
+    domain: "fd-fp3.wg1.b.yahoo.com",
+    addr: 46.228.47.115,
+    ttl: 19
+}
+A {
+    domain: "fd-fp3.wg1.b.yahoo.com",
+    addr: 46.228.47.114,
+    ttl: 19
+}
+```
 
 For good measure, let's try doing an MX lookup as well:
 
-    let qname = "yahoo.com";
-    let qtype = QueryType::MX;
+```rust
+let qname = "yahoo.com";
+let qtype = QueryType::MX;
+```
 
 Which yields:
 
-    - snip -
-    DnsQuestion {
-        name: "yahoo.com",
-        qtype: MX
-    }
-    MX {
-        domain: "yahoo.com",
-        priority: 1,
-        host: "mta6.am0.yahoodns.net",
-        ttl: 1794
-    }
-    MX {
-        domain: "yahoo.com",
-        priority: 1,
-        host: "mta7.am0.yahoodns.net",
-        ttl: 1794
-    }
-    MX {
-        domain: "yahoo.com",
-        priority: 1,
-        host: "mta5.am0.yahoodns.net",
-        ttl: 1794
-    }
+```text
+- snip -
+DnsQuestion {
+    name: "yahoo.com",
+    qtype: MX
+}
+MX {
+    domain: "yahoo.com",
+    priority: 1,
+    host: "mta6.am0.yahoodns.net",
+    ttl: 1794
+}
+MX {
+    domain: "yahoo.com",
+    priority: 1,
+    host: "mta7.am0.yahoodns.net",
+    ttl: 1794
+}
+MX {
+    domain: "yahoo.com",
+    priority: 1,
+    host: "mta5.am0.yahoodns.net",
+    ttl: 1794
+}
+```
 
 Encouraging!
 
@@ -1603,99 +1747,107 @@ flag set.
 Don't take my word for it, though! Let's verify that this is the case. First
 off, let's use `8.8.8.8` for looking up *yahoo.com*:
 
-    # dig @8.8.8.8 yahoo.com
+```text
+# dig @8.8.8.8 yahoo.com
 
-    ; <<>> DiG 9.10.3-P4-Ubuntu <<>> +recurse @8.8.8.8 yahoo.com
-    ; (1 server found)
-    ;; global options: +cmd
-    ;; Got answer:
-    ;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 53231
-    ;; flags: qr rd ra; QUERY: 1, ANSWER: 3, AUTHORITY: 0, ADDITIONAL: 1
+; <<>> DiG 9.10.3-P4-Ubuntu <<>> +recurse @8.8.8.8 yahoo.com
+; (1 server found)
+;; global options: +cmd
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 53231
+;; flags: qr rd ra; QUERY: 1, ANSWER: 3, AUTHORITY: 0, ADDITIONAL: 1
 
-    ;; OPT PSEUDOSECTION:
-    ; EDNS: version: 0, flags:; udp: 512
-    ;; QUESTION SECTION:
-    ;yahoo.com.			IN	A
+;; OPT PSEUDOSECTION:
+; EDNS: version: 0, flags:; udp: 512
+;; QUESTION SECTION:
+;yahoo.com.			IN	A
 
-    ;; ANSWER SECTION:
-    yahoo.com.		1051	IN	A	98.138.253.109
-    yahoo.com.		1051	IN	A	98.139.183.24
-    yahoo.com.		1051	IN	A	206.190.36.45
+;; ANSWER SECTION:
+yahoo.com.		1051	IN	A	98.138.253.109
+yahoo.com.		1051	IN	A	98.139.183.24
+yahoo.com.		1051	IN	A	206.190.36.45
 
-    ;; Query time: 1 msec
-    ;; SERVER: 8.8.8.8#53(8.8.8.8)
-    ;; WHEN: Fri Jul 08 11:43:55 CEST 2016
-    ;; MSG SIZE  rcvd: 86
+;; Query time: 1 msec
+;; SERVER: 8.8.8.8#53(8.8.8.8)
+;; WHEN: Fri Jul 08 11:43:55 CEST 2016
+;; MSG SIZE  rcvd: 86
+```
 
 This works as expected. Now let's try sending the same query to one of the
 servers hosting the *google.com* zone:
 
-    # dig @ns1.google.com yahoo.com
+```text
+# dig @ns1.google.com yahoo.com
 
-    ; <<>> DiG 9.10.3-P4-Ubuntu <<>> +recurse @ns1.google.com yahoo.com
-    ; (1 server found)
-    ;; global options: +cmd
-    ;; Got answer:
-    ;; ->>HEADER<<- opcode: QUERY, status: REFUSED, id: 12034
-    ;; flags: qr rd; QUERY: 1, ANSWER: 0, AUTHORITY: 0, ADDITIONAL: 0
-    ;; WARNING: recursion requested but not available
+; <<>> DiG 9.10.3-P4-Ubuntu <<>> +recurse @ns1.google.com yahoo.com
+; (1 server found)
+;; global options: +cmd
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: REFUSED, id: 12034
+;; flags: qr rd; QUERY: 1, ANSWER: 0, AUTHORITY: 0, ADDITIONAL: 0
+;; WARNING: recursion requested but not available
 
-    ;; QUESTION SECTION:
-    ;yahoo.com.			IN	A
+;; QUESTION SECTION:
+;yahoo.com.			IN	A
 
-    ;; Query time: 10 msec
-    ;; SERVER: 216.239.32.10#53(216.239.32.10)
-    ;; WHEN: Fri Jul 08 11:44:07 CEST 2016
-    ;; MSG SIZE  rcvd: 27
+;; Query time: 10 msec
+;; SERVER: 216.239.32.10#53(216.239.32.10)
+;; WHEN: Fri Jul 08 11:44:07 CEST 2016
+;; MSG SIZE  rcvd: 27
+```
 
 Notice how the status of the response says `REFUSED`! `dig` also warns us that
 while the `RD` flag was set in the query, the server didn't set it in the
 response. We can still use the same server for *google.com*, however:
 
-    dig @ns1.google.com google.com                                                                                                                                                                                                                                 <<<
+```text
+dig @ns1.google.com google.com                                                                                                                                                                                                                                 <<<
 
-    ; <<>> DiG 9.10.3-P4-Ubuntu <<>> +recurse @ns1.google.com google.com
-    ; (1 server found)
-    ;; global options: +cmd
-    ;; Got answer:
-    ;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 28058
-    ;; flags: qr aa rd; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 0
-    ;; WARNING: recursion requested but not available
+; <<>> DiG 9.10.3-P4-Ubuntu <<>> +recurse @ns1.google.com google.com
+; (1 server found)
+;; global options: +cmd
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 28058
+;; flags: qr aa rd; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 0
+;; WARNING: recursion requested but not available
 
-    ;; QUESTION SECTION:
-    ;google.com.			IN	A
+;; QUESTION SECTION:
+;google.com.			IN	A
 
-    ;; ANSWER SECTION:
-    google.com.		300	IN	A	216.58.211.142
+;; ANSWER SECTION:
+google.com.		300	IN	A	216.58.211.142
 
-    ;; Query time: 10 msec
-    ;; SERVER: 216.239.32.10#53(216.239.32.10)
-    ;; WHEN: Fri Jul 08 11:46:27 CEST 2016
-    ;; MSG SIZE  rcvd: 44
+;; Query time: 10 msec
+;; SERVER: 216.239.32.10#53(216.239.32.10)
+;; WHEN: Fri Jul 08 11:46:27 CEST 2016
+;; MSG SIZE  rcvd: 44
+```
 
 No error this time -- however, `dig` still warns us that recursion is
 unavailable. We can explicitly unset it using `+norecurse` which gets rid of
 the warning:
 
-    # dig +norecurse @ns1.google.com google.com
+```text
+# dig +norecurse @ns1.google.com google.com
 
-    ; <<>> DiG 9.10.3-P4-Ubuntu <<>> +norecurse @ns1.google.com google.com
-    ; (1 server found)
-    ;; global options: +cmd
-    ;; Got answer:
-    ;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 15850
-    ;; flags: qr aa; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 0
+; <<>> DiG 9.10.3-P4-Ubuntu <<>> +norecurse @ns1.google.com google.com
+; (1 server found)
+;; global options: +cmd
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 15850
+;; flags: qr aa; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 0
 
-    ;; QUESTION SECTION:
-    ;google.com.			IN	A
+;; QUESTION SECTION:
+;google.com.			IN	A
 
-    ;; ANSWER SECTION:
-    google.com.		300	IN	A	216.58.211.142
+;; ANSWER SECTION:
+google.com.		300	IN	A	216.58.211.142
 
-    ;; Query time: 10 msec
-    ;; SERVER: 216.239.32.10#53(216.239.32.10)
-    ;; WHEN: Fri Jul 08 11:47:52 CEST 2016
-    ;; MSG SIZE  rcvd: 44
+;; Query time: 10 msec
+;; SERVER: 216.239.32.10#53(216.239.32.10)
+;; WHEN: Fri Jul 08 11:47:52 CEST 2016
+;; MSG SIZE  rcvd: 44
+```
 
 This final query is the type of query that we'd expect to see a caching server
 send as part of recursively resolving the name.
@@ -1712,53 +1864,61 @@ a separate function. This is for the most part the same code as we had in our
 `main` function in the previous chapter, with the only change being that we
 handle errors gracefully using `try!`.
 
-    fn lookup(qname: &str, qtype: QueryType, server: (&str, u16)) -> Result<DnsPacket> {
-        let socket = try!(UdpSocket::bind(("0.0.0.0", 43210)));
+```rust
+fn lookup(qname: &str, qtype: QueryType, server: (&str, u16)) -> Result<DnsPacket> {
+    let socket = try!(UdpSocket::bind(("0.0.0.0", 43210)));
 
-        let mut packet = DnsPacket::new();
+    let mut packet = DnsPacket::new();
 
-        packet.header.id = 6666;
-        packet.header.questions = 1;
-        packet.header.recursion_desired = true;
-        packet.questions.push(DnsQuestion::new(qname.to_string(), qtype));
+    packet.header.id = 6666;
+    packet.header.questions = 1;
+    packet.header.recursion_desired = true;
+    packet.questions.push(DnsQuestion::new(qname.to_string(), qtype));
 
-        let mut req_buffer = BytePacketBuffer::new();
-        packet.write(&mut req_buffer).unwrap();
-        try!(socket.send_to(&req_buffer.buf[0..req_buffer.pos], server));
+    let mut req_buffer = BytePacketBuffer::new();
+    packet.write(&mut req_buffer).unwrap();
+    try!(socket.send_to(&req_buffer.buf[0..req_buffer.pos], server));
 
-        let mut res_buffer = BytePacketBuffer::new();
-        socket.recv_from(&mut res_buffer.buf).unwrap();
+    let mut res_buffer = BytePacketBuffer::new();
+    socket.recv_from(&mut res_buffer.buf).unwrap();
 
-        DnsPacket::from_buffer(&mut res_buffer)
-    }
+    DnsPacket::from_buffer(&mut res_buffer)
+}
+```
 
 ### Implementing our first server
 
 Now we'll write our server code. First, we need get some things in order.
 
-    fn main() {
-        // Forward queries to Google's public DNS
-        let server = ("8.8.8.8", 53);
+```rust
+fn main() {
+    // Forward queries to Google's public DNS
+    let server = ("8.8.8.8", 53);
 
-        // Bind an UDP socket on port 2053
-        let socket = UdpSocket::bind(("0.0.0.0", 2053)).unwrap();
+    // Bind an UDP socket on port 2053
+    let socket = UdpSocket::bind(("0.0.0.0", 2053)).unwrap();
+```
 
 For now, queries are handled sequentially, so an infinite loop for servicing
 requests is initiated.
 
-        loop {
+```rust
+    loop {
+```
 
 With a socket ready, we can go ahead and read a packet. This will block until
 one is received.
 
-            let mut req_buffer = BytePacketBuffer::new();
-            let (_, src) = match socket.recv_from(&mut req_buffer.buf) {
-                Ok(x) => x,
-                Err(e) => {
-                    println!("Failed to read from UDP socket: {:?}", e);
-                    continue;
-                }
-            };
+```rust
+        let mut req_buffer = BytePacketBuffer::new();
+        let (_, src) = match socket.recv_from(&mut req_buffer.buf) {
+            Ok(x) => x,
+            Err(e) => {
+                println!("Failed to read from UDP socket: {:?}", e);
+                continue;
+            }
+        };
+```
 
 Here we use match to safely unwrap the `Result`. If everything's as expected,
 the raw bytes are simply returned, and if not it'll abort by restarting the
@@ -1770,35 +1930,43 @@ track of the source in order to send our reply later on.
 Next, `DnsPacket::from_buffer` is used to parse the raw bytes into
 a `DnsPacket`. It uses the same error handling idiom as the previous statement.
 
-            let request = match DnsPacket::from_buffer(&mut req_buffer) {
-                Ok(x) => x,
-                Err(e) => {
-                    println!("Failed to parse UDP query packet: {:?}", e);
-                    continue;
-                }
-            };
+```rust
+        let request = match DnsPacket::from_buffer(&mut req_buffer) {
+            Ok(x) => x,
+            Err(e) => {
+                println!("Failed to parse UDP query packet: {:?}", e);
+                continue;
+            }
+        };
+```
 
 At this stage, the response packet is created and initiated.
 
-            let mut packet = DnsPacket::new();
-            packet.header.id = request.header.id;
-            packet.header.recursion_desired = true;
-            packet.header.recursion_available = true;
-            packet.header.response = true;
+```rust
+        let mut packet = DnsPacket::new();
+        packet.header.id = request.header.id;
+        packet.header.recursion_desired = true;
+        packet.header.recursion_available = true;
+        packet.header.response = true;
+```
 
 Being mindful of how unreliable input data from arbitrary senders can be, we
 need make sure that a question is actually present. If not, we return `FORMERR`
 to indicate that the sender made something wrong.
 
-            if request.questions.is_empty() {
-                packet.header.rescode = ResultCode::FORMERR;
-            }
+```rust
+        if request.questions.is_empty() {
+            packet.header.rescode = ResultCode::FORMERR;
+        }
+```
 
 Usually a question will be present, though.
 
-            else {
-                let question = &request.questions[0];
-                println!("Received query: {:?}", question);
+```rust
+        else {
+            let question = &request.questions[0];
+            println!("Received query: {:?}", question);
+```
 
 Since all is set up and as expected, the query can be forwarded to the target
 server. There's always the possibility that the query will fail, in which case
@@ -1806,89 +1974,99 @@ the `SERVFAIL` response code is set to indicate as much to the client. If
 rather everything goes as planned, the question and response records as copied
 into our response packet.
 
-                if let Ok(result) = lookup(&question.name, question.qtype, server) {
-                    packet.questions.push(question.clone());
-                    packet.header.rescode = result.header.rescode;
+```rust
+            if let Ok(result) = lookup(&question.name, question.qtype, server) {
+                packet.questions.push(question.clone());
+                packet.header.rescode = result.header.rescode;
 
-                    for rec in result.answers {
-                        println!("Answer: {:?}", rec);
-                        packet.answers.push(rec);
-                    }
-                    for rec in result.authorities {
-                        println!("Authority: {:?}", rec);
-                        packet.authorities.push(rec);
-                    }
-                    for rec in result.resources {
-                        println!("Resource: {:?}", rec);
-                        packet.resources.push(rec);
-                    }
-                } else {
-                    packet.header.rescode = ResultCode::SERVFAIL;
+                for rec in result.answers {
+                    println!("Answer: {:?}", rec);
+                    packet.answers.push(rec);
                 }
+                for rec in result.authorities {
+                    println!("Authority: {:?}", rec);
+                    packet.authorities.push(rec);
+                }
+                for rec in result.resources {
+                    println!("Resource: {:?}", rec);
+                    packet.resources.push(rec);
+                }
+            } else {
+                packet.header.rescode = ResultCode::SERVFAIL;
+            }
+```
 
 The only thing remaining is to encode our response and send it off!
 
-            let mut res_buffer = BytePacketBuffer::new();
-            match packet.write(&mut res_buffer) {
-                Ok(_) => {},
-                Err(e) => {
-                    println!("Failed to encode UDP response packet: {:?}", e);
-                    continue;
-                }
-            };
+```rust
+        let mut res_buffer = BytePacketBuffer::new();
+        match packet.write(&mut res_buffer) {
+            Ok(_) => {},
+            Err(e) => {
+                println!("Failed to encode UDP response packet: {:?}", e);
+                continue;
+            }
+        };
 
-            let len = res_buffer.pos();
-            let data = match res_buffer.get_range(0, len) {
-                Ok(x) => x,
-                Err(e) => {
-                    println!("Failed to retrieve response buffer: {:?}", e);
-                    continue;
-                }
-            };
+        let len = res_buffer.pos();
+        let data = match res_buffer.get_range(0, len) {
+            Ok(x) => x,
+            Err(e) => {
+                println!("Failed to retrieve response buffer: {:?}", e);
+                continue;
+            }
+        };
 
-            match socket.send_to(data, src) {
-                Ok(_) => {},
-                Err(e) => {
-                    println!("Failed to send response buffer: {:?}", e);
-                    continue;
-                }
-            };
+        match socket.send_to(data, src) {
+            Ok(_) => {},
+            Err(e) => {
+                println!("Failed to send response buffer: {:?}", e);
+                continue;
+            }
+        };
+```
 
 The match idiom for error handling is used again here, since we want to avoid
 terminating our request loop at all cost. It's a bit verbose, and normally we'd
 like to use `try!` instead. Unfortunately that's unavailable to us here, since
 we're in the `main` function which doesn't return a `Result`.
 
-        } // End of request loop
-    } // End of main
+```rust
+    } // End of request loop
+} // End of main
+```
 
 All done! Let's try it! We start our server in one terminal, and use `dig` to
 perform a lookup in a second terminal.
 
-    # dig @127.0.0.1 -p 2053 google.com
+```text
+# dig @127.0.0.1 -p 2053 google.com
 
-    ; <<>> DiG 9.10.3-P4-Ubuntu <<>> @127.0.0.1 -p 2053 google.com
-    ; (1 server found)
-    ;; global options: +cmd
-    ;; Got answer:
-    ;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 47200
-    ;; flags: qr rd ra; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 0
+; <<>> DiG 9.10.3-P4-Ubuntu <<>> @127.0.0.1 -p 2053 google.com
+; (1 server found)
+;; global options: +cmd
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 47200
+;; flags: qr rd ra; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 0
 
-    ;; QUESTION SECTION:
-    ;google.com.			IN	A
+;; QUESTION SECTION:
+;google.com.			IN	A
 
-    ;; ANSWER SECTION:
-    google.com.		68	IN	A	216.58.211.142
+;; ANSWER SECTION:
+google.com.		68	IN	A	216.58.211.142
 
-    ;; Query time: 1 msec
-    ;; SERVER: 127.0.0.1#2053(127.0.0.1)
-    ;; WHEN: Fri Jul 08 12:07:44 CEST 2016
-    ;; MSG SIZE  rcvd: 54
+;; Query time: 1 msec
+;; SERVER: 127.0.0.1#2053(127.0.0.1)
+;; WHEN: Fri Jul 08 12:07:44 CEST 2016
+;; MSG SIZE  rcvd: 54
+```
 
 Looking at our server terminal we see:
 
-    Received query: DnsQuestion { name: "google.com", qtype: A }
-    Answer: A { domain: "google.com", addr: 216.58.211.142, ttl: 96 }
+```text
+Received query: DnsQuestion { name: "google.com", qtype: A }
+Answer: A { domain: "google.com", addr: 216.58.211.142, ttl: 96 }
+```
 
 In less than 800 lines of code, we've built a DNS server able to respond to
 queries with several different record types!
@@ -1914,56 +2092,58 @@ one of them at random. Looking at `named.root` we see that the IP-adress of
 *a.root-servers.net* is 198.41.0.4, so we'll go ahead and use that to perform
 our initial query for *www.google.com*.
 
-    # dig +norecurse @198.41.0.4 www.google.com
+```text
+# dig +norecurse @198.41.0.4 www.google.com
 
-    ; <<>> DiG 9.10.3-P4-Ubuntu <<>> +norecurse @198.41.0.4 www.google.com
-    ; (1 server found)
-    ;; global options: +cmd
-    ;; Got answer:
-    ;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 64866
-    ;; flags: qr; QUERY: 1, ANSWER: 0, AUTHORITY: 13, ADDITIONAL: 16
+; <<>> DiG 9.10.3-P4-Ubuntu <<>> +norecurse @198.41.0.4 www.google.com
+; (1 server found)
+;; global options: +cmd
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 64866
+;; flags: qr; QUERY: 1, ANSWER: 0, AUTHORITY: 13, ADDITIONAL: 16
 
-    ;; OPT PSEUDOSECTION:
-    ; EDNS: version: 0, flags:; udp: 4096
-    ;; QUESTION SECTION:
-    ;www.google.com.			IN	A
+;; OPT PSEUDOSECTION:
+; EDNS: version: 0, flags:; udp: 4096
+;; QUESTION SECTION:
+;www.google.com.			IN	A
 
-    ;; AUTHORITY SECTION:
-    com.			172800	IN	NS	e.gtld-servers.net.
-    com.			172800	IN	NS	b.gtld-servers.net.
-    com.			172800	IN	NS	j.gtld-servers.net.
-    com.			172800	IN	NS	m.gtld-servers.net.
-    com.			172800	IN	NS	i.gtld-servers.net.
-    com.			172800	IN	NS	f.gtld-servers.net.
-    com.			172800	IN	NS	a.gtld-servers.net.
-    com.			172800	IN	NS	g.gtld-servers.net.
-    com.			172800	IN	NS	h.gtld-servers.net.
-    com.			172800	IN	NS	l.gtld-servers.net.
-    com.			172800	IN	NS	k.gtld-servers.net.
-    com.			172800	IN	NS	c.gtld-servers.net.
-    com.			172800	IN	NS	d.gtld-servers.net.
+;; AUTHORITY SECTION:
+com.			172800	IN	NS	e.gtld-servers.net.
+com.			172800	IN	NS	b.gtld-servers.net.
+com.			172800	IN	NS	j.gtld-servers.net.
+com.			172800	IN	NS	m.gtld-servers.net.
+com.			172800	IN	NS	i.gtld-servers.net.
+com.			172800	IN	NS	f.gtld-servers.net.
+com.			172800	IN	NS	a.gtld-servers.net.
+com.			172800	IN	NS	g.gtld-servers.net.
+com.			172800	IN	NS	h.gtld-servers.net.
+com.			172800	IN	NS	l.gtld-servers.net.
+com.			172800	IN	NS	k.gtld-servers.net.
+com.			172800	IN	NS	c.gtld-servers.net.
+com.			172800	IN	NS	d.gtld-servers.net.
 
-    ;; ADDITIONAL SECTION:
-    e.gtld-servers.net.	172800	IN	A	192.12.94.30
-    b.gtld-servers.net.	172800	IN	A	192.33.14.30
-    b.gtld-servers.net.	172800	IN	AAAA	2001:503:231d::2:30
-    j.gtld-servers.net.	172800	IN	A	192.48.79.30
-    m.gtld-servers.net.	172800	IN	A	192.55.83.30
-    i.gtld-servers.net.	172800	IN	A	192.43.172.30
-    f.gtld-servers.net.	172800	IN	A	192.35.51.30
-    a.gtld-servers.net.	172800	IN	A	192.5.6.30
-    a.gtld-servers.net.	172800	IN	AAAA	2001:503:a83e::2:30
-    g.gtld-servers.net.	172800	IN	A	192.42.93.30
-    h.gtld-servers.net.	172800	IN	A	192.54.112.30
-    l.gtld-servers.net.	172800	IN	A	192.41.162.30
-    k.gtld-servers.net.	172800	IN	A	192.52.178.30
-    c.gtld-servers.net.	172800	IN	A	192.26.92.30
-    d.gtld-servers.net.	172800	IN	A	192.31.80.30
+;; ADDITIONAL SECTION:
+e.gtld-servers.net.	172800	IN	A	192.12.94.30
+b.gtld-servers.net.	172800	IN	A	192.33.14.30
+b.gtld-servers.net.	172800	IN	AAAA	2001:503:231d::2:30
+j.gtld-servers.net.	172800	IN	A	192.48.79.30
+m.gtld-servers.net.	172800	IN	A	192.55.83.30
+i.gtld-servers.net.	172800	IN	A	192.43.172.30
+f.gtld-servers.net.	172800	IN	A	192.35.51.30
+a.gtld-servers.net.	172800	IN	A	192.5.6.30
+a.gtld-servers.net.	172800	IN	AAAA	2001:503:a83e::2:30
+g.gtld-servers.net.	172800	IN	A	192.42.93.30
+h.gtld-servers.net.	172800	IN	A	192.54.112.30
+l.gtld-servers.net.	172800	IN	A	192.41.162.30
+k.gtld-servers.net.	172800	IN	A	192.52.178.30
+c.gtld-servers.net.	172800	IN	A	192.26.92.30
+d.gtld-servers.net.	172800	IN	A	192.31.80.30
 
-    ;; Query time: 24 msec
-    ;; SERVER: 198.41.0.4#53(198.41.0.4)
-    ;; WHEN: Fri Jul 08 14:09:20 CEST 2016
-    ;; MSG SIZE  rcvd: 531
+;; Query time: 24 msec
+;; SERVER: 198.41.0.4#53(198.41.0.4)
+;; WHEN: Fri Jul 08 14:09:20 CEST 2016
+;; MSG SIZE  rcvd: 531
+```
 
 The root servers don't know about *www.google.com*, but they do know about
 *com*, so our reply tells us where to go next. There are a few things to take
@@ -1980,60 +2160,64 @@ note of:
 Let's pick a server from the result and move on. *192.5.6.30* for
 *a.gtld-servers.net* seems as good as any.
 
-    # dig +norecurse @192.5.6.30 www.google.com
+```text
+# dig +norecurse @192.5.6.30 www.google.com
 
-    ; <<>> DiG 9.10.3-P4-Ubuntu <<>> +norecurse @192.5.6.30 www.google.com
-    ; (1 server found)
-    ;; global options: +cmd
-    ;; Got answer:
-    ;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 16229
-    ;; flags: qr; QUERY: 1, ANSWER: 0, AUTHORITY: 4, ADDITIONAL: 5
+; <<>> DiG 9.10.3-P4-Ubuntu <<>> +norecurse @192.5.6.30 www.google.com
+; (1 server found)
+;; global options: +cmd
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 16229
+;; flags: qr; QUERY: 1, ANSWER: 0, AUTHORITY: 4, ADDITIONAL: 5
 
-    ;; OPT PSEUDOSECTION:
-    ; EDNS: version: 0, flags:; udp: 4096
-    ;; QUESTION SECTION:
-    ;www.google.com.			IN	A
+;; OPT PSEUDOSECTION:
+; EDNS: version: 0, flags:; udp: 4096
+;; QUESTION SECTION:
+;www.google.com.			IN	A
 
-    ;; AUTHORITY SECTION:
-    google.com.		172800	IN	NS	ns2.google.com.
-    google.com.		172800	IN	NS	ns1.google.com.
-    google.com.		172800	IN	NS	ns3.google.com.
-    google.com.		172800	IN	NS	ns4.google.com.
+;; AUTHORITY SECTION:
+google.com.		172800	IN	NS	ns2.google.com.
+google.com.		172800	IN	NS	ns1.google.com.
+google.com.		172800	IN	NS	ns3.google.com.
+google.com.		172800	IN	NS	ns4.google.com.
 
-    ;; ADDITIONAL SECTION:
-    ns2.google.com.		172800	IN	A	216.239.34.10
-    ns1.google.com.		172800	IN	A	216.239.32.10
-    ns3.google.com.		172800	IN	A	216.239.36.10
-    ns4.google.com.		172800	IN	A	216.239.38.10
+;; ADDITIONAL SECTION:
+ns2.google.com.		172800	IN	A	216.239.34.10
+ns1.google.com.		172800	IN	A	216.239.32.10
+ns3.google.com.		172800	IN	A	216.239.36.10
+ns4.google.com.		172800	IN	A	216.239.38.10
 
-    ;; Query time: 114 msec
-    ;; SERVER: 192.5.6.30#53(192.5.6.30)
-    ;; WHEN: Fri Jul 08 14:13:26 CEST 2016
-    ;; MSG SIZE  rcvd: 179
+;; Query time: 114 msec
+;; SERVER: 192.5.6.30#53(192.5.6.30)
+;; WHEN: Fri Jul 08 14:13:26 CEST 2016
+;; MSG SIZE  rcvd: 179
+```
 
 We're still not at *www.google.com*, but at least we have a set of servers that
 handle the *google.com* domain now. Let's give it another shot by sending our
 query to *216.239.32.10*.
 
-    # dig +norecurse @216.239.32.10 www.google.com
+```text
+# dig +norecurse @216.239.32.10 www.google.com
 
-    ; <<>> DiG 9.10.3-P4-Ubuntu <<>> +norecurse @216.239.32.10 www.google.com
-    ; (1 server found)
-    ;; global options: +cmd
-    ;; Got answer:
-    ;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 20432
-    ;; flags: qr aa; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 0
+; <<>> DiG 9.10.3-P4-Ubuntu <<>> +norecurse @216.239.32.10 www.google.com
+; (1 server found)
+;; global options: +cmd
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 20432
+;; flags: qr aa; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 0
 
-    ;; QUESTION SECTION:
-    ;www.google.com.            IN  A
+;; QUESTION SECTION:
+;www.google.com.            IN  A
 
-    ;; ANSWER SECTION:
-    www.google.com.     300 IN  A   216.58.211.132
+;; ANSWER SECTION:
+www.google.com.     300 IN  A   216.58.211.132
 
-    ;; Query time: 10 msec
-    ;; SERVER: 216.239.32.10#53(216.239.32.10)
-    ;; WHEN: Fri Jul 08 14:15:11 CEST 2016
-    ;; MSG SIZE  rcvd: 48
+;; Query time: 10 msec
+;; SERVER: 216.239.32.10#53(216.239.32.10)
+;; WHEN: Fri Jul 08 14:15:11 CEST 2016
+;; MSG SIZE  rcvd: 48
+```
 
 And here we go! The IP of *www.google.com* as we desired. Let's recap:
 
@@ -2052,223 +2236,265 @@ or zero.
 
 Before we can get on, we'll need a few utility functions on `DnsPacket`.
 
-    impl DnsPacket {
+```rust
+impl DnsPacket {
 
-        - snip -
+    - snip -
+```
 
 First, it's useful to be able to pick a random A record from a packet. Since we
 don't want to introduce an external dependency, and there's no method for
 generating random numbers in the rust standard library, we'll just pick the
 first entry for now.
 
-        pub fn get_random_a(&self) -> Option<String> {
-            if !self.answers.is_empty() {
-                let idx = random::<usize>() % self.answers.len();
-                let a_record = &self.answers[idx];
-                if let DnsRecord::A{ ref addr, .. } = *a_record {
-                    return Some(addr.to_string());
-                }
+```rust
+    pub fn get_random_a(&self) -> Option<String> {
+        if !self.answers.is_empty() {
+            let idx = random::<usize>() % self.answers.len();
+            let a_record = &self.answers[idx];
+            if let DnsRecord::A{ ref addr, .. } = *a_record {
+                return Some(addr.to_string());
             }
-
-            None
         }
+
+        None
+    }
+```
 
 Second, we'll use the fact that name servers often bundle the corresponding
 A records when replying to an NS query to implement a function that returns
 the actual IP for an NS record if possible.
 
-        pub fn get_resolved_ns(&self, qname: &str) -> Option<String> {
+```rust
+    pub fn get_resolved_ns(&self, qname: &str) -> Option<String> {
+```
 
 First, we scan the list of NS records in the authorities section:
 
-            let mut new_authorities = Vec::new();
-            for auth in &self.authorities {
-                if let DnsRecord::NS { ref domain, ref host, .. } = *auth {
-                    if !qname.ends_with(domain) {
-                        continue;
-                    }
+```rust
+        let mut new_authorities = Vec::new();
+        for auth in &self.authorities {
+            if let DnsRecord::NS { ref domain, ref host, .. } = *auth {
+                if !qname.ends_with(domain) {
+                    continue;
+                }
+```
 
 Once we've found an NS record, we scan the resources record for a matching
 A record...
 
-                    for rsrc in &self.resources {
-                        if let DnsRecord::A{ ref domain, ref addr, ttl } = *rsrc {
-                            if domain != host {
-                                continue;
-                            }
+```rust
+                for rsrc in &self.resources {
+                    if let DnsRecord::A{ ref domain, ref addr, ttl } = *rsrc {
+                        if domain != host {
+                            continue;
+                        }
 
-                            let rec = DnsRecord::A {
-                                domain: host.clone(),
-                                addr: *addr,
-                                ttl: ttl
-                            };
+                        let rec = DnsRecord::A {
+                            domain: host.clone(),
+                            addr: *addr,
+                            ttl: ttl
+                        };
+```
 
 ...and push any matches to a list.
 
-                            new_authorities.push(rec);
-                        }
+```rust
+                        new_authorities.push(rec);
                     }
                 }
             }
+        }
+```
 
 If there are any matches, we pick the first one. Again, we'll want to introduce
 randomization later on.
 
-            if !new_authorities.is_empty() {
-                if let DnsRecord::A { addr, .. } = new_authorities[0] {
-                    return Some(addr.to_string());
-                }
+```rust
+        if !new_authorities.is_empty() {
+            if let DnsRecord::A { addr, .. } = new_authorities[0] {
+                return Some(addr.to_string());
             }
+        }
 
-            None
-        } // End of get_resolved_ns
+        None
+    } // End of get_resolved_ns
+```
 
 However, not all name servers are as well behaved. In certain cases there won't
 be any A records in the additional section, and we'll have to perform *another*
 lookup in the midst. For this, we introduce a method for returning the host
 name of an appropriate name server.
 
-        pub fn get_unresolved_ns(&self, qname: &str) -> Option<String> {
+```rust
+    pub fn get_unresolved_ns(&self, qname: &str) -> Option<String> {
 
-            let mut new_authorities = Vec::new();
-            for auth in &self.authorities {
-                if let DnsRecord::NS { ref domain, ref host, .. } = *auth {
-                    if !qname.ends_with(domain) {
-                        continue;
-                    }
-
-                    new_authorities.push(host);
+        let mut new_authorities = Vec::new();
+        for auth in &self.authorities {
+            if let DnsRecord::NS { ref domain, ref host, .. } = *auth {
+                if !qname.ends_with(domain) {
+                    continue;
                 }
+
+                new_authorities.push(host);
             }
+        }
 
-            if !new_authorities.is_empty() {
-                let idx = random::<usize>() % new_authorities.len();
-                return Some(new_authorities[idx].clone());
-            }
+        if !new_authorities.is_empty() {
+            let idx = random::<usize>() % new_authorities.len();
+            return Some(new_authorities[idx].clone());
+        }
 
-            None
-        } // End of get_unresolved_ns
+        None
+    } // End of get_unresolved_ns
 
-    } // End of DnsPacket
+} // End of DnsPacket
+```
 
 ### Implementing recursive lookup
 
 We move swiftly on to our new `recursive_lookup` function:
 
-    fn recursive_lookup(qname: &str, qtype: QueryType) -> Result<DnsPacket> {
+```rust
+fn recursive_lookup(qname: &str, qtype: QueryType) -> Result<DnsPacket> {
+```
 
 For now we're always starting with *a.root-servers.net*.
 
-        let mut ns = "198.41.0.4".to_string();
+```rust
+    let mut ns = "198.41.0.4".to_string();
+```
 
 Since it might take an arbitrary number of steps, we enter an unbounded loop.
 
-        loop {
-            println!("attempting lookup of {:?} {} with ns {}", qtype, qname, ns);
+```rust
+    loop {
+        println!("attempting lookup of {:?} {} with ns {}", qtype, qname, ns);
+```
 
 The next step is to send the query to the active server.
 
-            let ns_copy = ns.clone();
+```rust
+        let ns_copy = ns.clone();
 
-            let server = (ns_copy.as_str(), 53);
-            let response = try!(lookup(qname, qtype.clone(), server));
+        let server = (ns_copy.as_str(), 53);
+        let response = try!(lookup(qname, qtype.clone(), server));
+```
 
 If there are entries in the answer section, and no errors, we are done!
 
-            if !response.answers.is_empty() &&
-               response.header.rescode == ResultCode::NOERROR {
+```rust
+        if !response.answers.is_empty() &&
+           response.header.rescode == ResultCode::NOERROR {
 
-                return Ok(response.clone());
-            }
+            return Ok(response.clone());
+        }
+```
 
 We might also get a `NXDOMAIN` reply, which is the authoritative name servers
 way of telling us that the name doesn't exist.
 
-            if response.header.rescode == ResultCode::NXDOMAIN {
-                return Ok(response.clone());
-            }
+```rust
+        if response.header.rescode == ResultCode::NXDOMAIN {
+            return Ok(response.clone());
+        }
+```
 
 Otherwise, we'll try to find a new nameserver based on NS and a corresponding A
 record in the additional section. If this succeeds, we can switch name server
 and retry the loop.
 
-            if let Some(new_ns) = response.get_resolved_ns(qname) {
-                ns = new_ns.clone();
+```rust
+        if let Some(new_ns) = response.get_resolved_ns(qname) {
+            ns = new_ns.clone();
 
-                continue;
-            }
+            continue;
+        }
+```
 
 If not, we'll have to resolve the ip of a NS record. If no NS records exist,
 we'll go with what the last server told us.
 
-            let new_ns_name = match response.get_unresolved_ns(qname) {
-                Some(x) => x,
-                None => return Ok(response.clone())
-            };
+```rust
+        let new_ns_name = match response.get_unresolved_ns(qname) {
+            Some(x) => x,
+            None => return Ok(response.clone())
+        };
+```
 
 Here we go down the rabbit hole by starting _another_ lookup sequence in the
 midst of our current one. Hopefully, this will give us the IP of an appropriate
 name server.
 
-            let recursive_response = try!(recursive_lookup(&new_ns_name, QueryType::A));
+```rust
+        let recursive_response = try!(recursive_lookup(&new_ns_name, QueryType::A));
+```
 
 Finally, we pick a random ip from the result, and restart the loop. If no such
 record is available, we again return the last result we got.
 
-            if let Some(new_ns) = recursive_response.get_random_a() {
-                ns = new_ns.clone();
-            } else {
-                return Ok(response.clone())
-            }
+```rust
+        if let Some(new_ns) = recursive_response.get_random_a() {
+            ns = new_ns.clone();
+        } else {
+            return Ok(response.clone())
         }
-    } // End of recursive_lookup
+    }
+} // End of recursive_lookup
+```
 
 ### Trying out recursive lookup
 
 The only thing remaining is to change our main function to use
 `recursive_lookup`:
 
-    fn main() {
+```rust
+fn main() {
 
-        - snip -
+    - snip -
 
-                println!("Received query: {:?}", question);
-                if let Ok(result) = recursive_lookup(&question.name, question.qtype) {
-                    packet.questions.push(question.clone());
-                    packet.header.rescode = result.header.rescode;
+            println!("Received query: {:?}", question);
+            if let Ok(result) = recursive_lookup(&question.name, question.qtype) {
+                packet.questions.push(question.clone());
+                packet.header.rescode = result.header.rescode;
 
-        - snip -
+    - snip -
 
-    }
+}
+```
 
 Let's try it!
 
-    # dig @127.0.0.1 -p 2053 www.google.com
+```text
+# dig @127.0.0.1 -p 2053 www.google.com
 
-    ; <<>> DiG 9.10.3-P4-Ubuntu <<>> @127.0.0.1 -p 2053 www.google.com
-    ; (1 server found)
-    ;; global options: +cmd
-    ;; Got answer:
-    ;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 41892
-    ;; flags: qr rd ra; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 0
+; <<>> DiG 9.10.3-P4-Ubuntu <<>> @127.0.0.1 -p 2053 www.google.com
+; (1 server found)
+;; global options: +cmd
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 41892
+;; flags: qr rd ra; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 0
 
-    ;; QUESTION SECTION:
-    ;www.google.com.			IN	A
+;; QUESTION SECTION:
+;www.google.com.			IN	A
 
-    ;; ANSWER SECTION:
-    www.google.com.		300	IN	A	216.58.211.132
+;; ANSWER SECTION:
+www.google.com.		300	IN	A	216.58.211.132
 
-    ;; Query time: 76 msec
-    ;; SERVER: 127.0.0.1#2053(127.0.0.1)
-    ;; WHEN: Fri Jul 08 14:31:39 CEST 2016
-    ;; MSG SIZE  rcvd: 62
+;; Query time: 76 msec
+;; SERVER: 127.0.0.1#2053(127.0.0.1)
+;; WHEN: Fri Jul 08 14:31:39 CEST 2016
+;; MSG SIZE  rcvd: 62
+```
 
 Looking at our server window, we see:
 
-    Received query: DnsQuestion { name: "www.google.com", qtype: A }
-    attempting lookup of A www.google.com with ns 198.41.0.4
-    attempting lookup of A www.google.com with ns 192.12.94.30
-    attempting lookup of A www.google.com with ns 216.239.34.10
-    Answer: A { domain: "www.google.com", addr: 216.58.211.132, ttl: 300 }
+```text
+Received query: DnsQuestion { name: "www.google.com", qtype: A }
+attempting lookup of A www.google.com with ns 198.41.0.4
+attempting lookup of A www.google.com with ns 192.12.94.30
+attempting lookup of A www.google.com with ns 216.239.34.10
+Answer: A { domain: "www.google.com", addr: 216.58.211.132, ttl: 300 }
+```
 
 This mirrors our manual process earlier. We're really getting somewhere!
