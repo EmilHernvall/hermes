@@ -1,8 +1,5 @@
 //! hermes documentation
 
-#![feature(plugin)]
-#![plugin(clippy)]
-
 pub mod dns;
 pub mod web;
 
