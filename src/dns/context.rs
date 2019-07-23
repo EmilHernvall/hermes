@@ -4,10 +4,10 @@ use std::io::Result;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize,Ordering};
 
-use dns::resolve::{DnsResolver,RecursiveDnsResolver,ForwardingDnsResolver};
-use dns::client::{DnsClient,DnsNetworkClient};
-use dns::cache::SynchronizedCache;
-use dns::authority::Authority;
+use crate::dns::resolve::{DnsResolver,RecursiveDnsResolver,ForwardingDnsResolver};
+use crate::dns::client::{DnsClient,DnsNetworkClient};
+use crate::dns::cache::SynchronizedCache;
+use crate::dns::authority::Authority;
 
 pub struct ServerStatistics {
     pub tcp_query_count: AtomicUsize,
@@ -98,10 +98,10 @@ pub mod tests {
     use std::sync::Arc;
     use std::sync::atomic::AtomicUsize;
 
-    use dns::authority::Authority;
-    use dns::cache::SynchronizedCache;
+    use crate::dns::authority::Authority;
+    use crate::dns::cache::SynchronizedCache;
 
-    use dns::client::tests::{StubCallback,DnsStubClient};
+    use crate::dns::client::tests::{StubCallback,DnsStubClient};
 
     use super::*;
 

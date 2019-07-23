@@ -6,8 +6,8 @@ use std::io::{Write,Result,Error,ErrorKind};
 use std::fs::File;
 use std::path::Path;
 
-use dns::buffer::{VectorPacketBuffer, PacketBuffer, StreamPacketBuffer};
-use dns::protocol::{DnsPacket,DnsRecord,QueryType,ResultCode,TransientTtl};
+use crate::dns::buffer::{VectorPacketBuffer, PacketBuffer, StreamPacketBuffer};
+use crate::dns::protocol::{DnsPacket,DnsRecord,QueryType,ResultCode,TransientTtl};
 
 #[derive(Clone,Debug,Default)]
 pub struct Zone {

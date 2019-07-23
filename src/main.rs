@@ -18,13 +18,13 @@ use std::net::Ipv4Addr;
 
 use getopts::Options;
 
-use dns::server::{DnsServer,DnsUdpServer,DnsTcpServer};
-use dns::protocol::{DnsRecord,TransientTtl};
-use dns::context::{ServerContext, ResolveStrategy};
-use web::server::WebServer;
-use web::cache::CacheAction;
-use web::authority::{AuthorityAction,ZoneAction};
-use web::index::IndexAction;
+use crate::dns::server::{DnsServer,DnsUdpServer,DnsTcpServer};
+use crate::dns::protocol::{DnsRecord,TransientTtl};
+use crate::dns::context::{ServerContext, ResolveStrategy};
+use crate::web::server::WebServer;
+use crate::web::cache::CacheAction;
+use crate::web::authority::{AuthorityAction,ZoneAction};
+use crate::web::index::IndexAction;
 
 fn print_usage(program: &str, opts: Options) {
     let brief = format!("Usage: {} [options]", program);

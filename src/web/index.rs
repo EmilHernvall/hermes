@@ -4,12 +4,11 @@ use std::sync::Arc;
 
 use regex::{Regex,Captures};
 use tiny_http::{Response, Header, Request};
-//use chrono::*;
 use rustc_serialize::json::{self, ToJson, Json};
 
-use dns::context::ServerContext;
+use crate::dns::context::ServerContext;
 
-use web::server::{Action,WebServer};
+use crate::web::server::{Action,WebServer};
 
 #[derive(RustcEncodable)]
 pub struct IndexResponse
@@ -47,7 +46,6 @@ impl IndexAction {
 
 impl Action for IndexAction {
 
-    #[allow(trivial_regex)]
     fn get_regex(&self) -> Regex {
         Regex::new(r"^/$").unwrap()
     }

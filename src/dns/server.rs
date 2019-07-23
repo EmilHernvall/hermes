@@ -11,11 +11,11 @@ use std::collections::VecDeque;
 
 use rand::random;
 
-use dns::resolve::DnsResolver;
-use dns::protocol::{DnsPacket, QueryType, DnsRecord, ResultCode};
-use dns::buffer::{PacketBuffer, BytePacketBuffer, VectorPacketBuffer, StreamPacketBuffer};
-use dns::context::ServerContext;
-use dns::netutil::{read_packet_length, write_packet_length};
+use crate::dns::resolve::DnsResolver;
+use crate::dns::protocol::{DnsPacket, QueryType, DnsRecord, ResultCode};
+use crate::dns::buffer::{PacketBuffer, BytePacketBuffer, VectorPacketBuffer, StreamPacketBuffer};
+use crate::dns::context::ServerContext;
+use crate::dns::netutil::{read_packet_length, write_packet_length};
 
 macro_rules! return_or_report {
     ( $x:expr, $message:expr ) => {
@@ -380,12 +380,12 @@ mod tests {
     use std::net::Ipv4Addr;
     use std::io::{Error, ErrorKind};
 
-    use dns::protocol::{DnsPacket, DnsQuestion, QueryType, DnsRecord, ResultCode, TransientTtl};
+    use crate::dns::protocol::{DnsPacket, DnsQuestion, QueryType, DnsRecord, ResultCode, TransientTtl};
 
     use super::*;
 
-    use dns::context::ResolveStrategy;
-    use dns::context::tests::create_test_context;
+    use crate::dns::context::ResolveStrategy;
+    use crate::dns::context::tests::create_test_context;
 
     fn build_query(qname: &str, qtype: QueryType) -> DnsPacket {
         let mut query_packet = DnsPacket::new();

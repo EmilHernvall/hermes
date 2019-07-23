@@ -6,9 +6,8 @@ use std::vec::Vec;
 use std::io::{Error, ErrorKind};
 use std::sync::Arc;
 
-use dns::protocol::{QueryType, DnsPacket, ResultCode};
-use dns::client::DnsClient;
-use dns::context::ServerContext;
+use crate::dns::protocol::{QueryType, DnsPacket, ResultCode};
+use crate::dns::context::ServerContext;
 
 pub trait DnsResolver {
 
@@ -212,12 +211,12 @@ mod tests {
 
     use std::sync::Arc;
 
-    use dns::protocol::{DnsPacket, QueryType, DnsRecord, ResultCode, TransientTtl};
+    use crate::dns::protocol::{DnsPacket, QueryType, DnsRecord, ResultCode, TransientTtl};
 
     use super::*;
 
-    use dns::context::ResolveStrategy;
-    use dns::context::tests::create_test_context;
+    use crate::dns::context::ResolveStrategy;
+    use crate::dns::context::tests::create_test_context;
 
     #[test]
     fn test_forwarding_resolver() {

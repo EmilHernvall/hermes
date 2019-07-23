@@ -6,7 +6,7 @@ use rustc_serialize::json::{self,ToJson,Json,DecodeResult,DecoderError};
 use rustc_serialize::Decodable;
 use tiny_http::Request;
 
-use dns::protocol::{DnsRecord,TransientTtl};
+use crate::dns::protocol::{DnsRecord,TransientTtl};
 
 pub trait FormDataDecodable<T> {
     fn from_formdata(fields: Vec<(String, String)>) -> Result<T>;

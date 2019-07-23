@@ -86,7 +86,6 @@ pub trait PacketBuffer {
         Ok(res)
     }
 
-    #[allow(identity_op)]
     fn read_u32(&mut self) -> Result<u32>
     {
         let res = ((self.read()? as u32) << 24) |

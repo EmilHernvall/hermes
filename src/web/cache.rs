@@ -7,11 +7,11 @@ use tiny_http::{Response, Header, Request};
 //use chrono::*;
 use rustc_serialize::json::{self, ToJson, Json};
 
-use dns::context::ServerContext;
-use dns::cache::RecordSet;
+use crate::dns::context::ServerContext;
+use crate::dns::cache::RecordSet;
 
-use web::util::rr_to_json;
-use web::server::{Action,WebServer};
+use crate::web::util::rr_to_json;
+use crate::web::server::{Action,WebServer};
 
 #[derive(RustcEncodable)]
 pub struct CacheRecord
@@ -63,7 +63,6 @@ impl CacheAction {
 
 impl Action for CacheAction {
 
-    #[allow(trivial_regex)]
     fn get_regex(&self) -> Regex {
         Regex::new(r"^/cache").unwrap()
     }

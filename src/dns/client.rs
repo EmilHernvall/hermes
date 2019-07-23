@@ -11,9 +11,9 @@ use std::sync::atomic::{AtomicUsize,Ordering};
 
 use chrono::*;
 
-use dns::buffer::{PacketBuffer, BytePacketBuffer, StreamPacketBuffer};
-use dns::protocol::{DnsPacket, DnsQuestion, QueryType};
-use dns::netutil::{read_packet_length, write_packet_length};
+use crate::dns::buffer::{PacketBuffer, BytePacketBuffer, StreamPacketBuffer};
+use crate::dns::protocol::{DnsPacket, DnsQuestion, QueryType};
+use crate::dns::netutil::{read_packet_length, write_packet_length};
 
 pub trait DnsClient {
     fn get_sent_count(&self) -> usize;
@@ -303,7 +303,7 @@ pub mod tests {
 
     use std::io::Result;
 
-    use dns::protocol::{DnsPacket,QueryType,DnsRecord};
+    use crate::dns::protocol::{DnsPacket,QueryType,DnsRecord};
     use super::*;
 
     pub type StubCallback = Fn(&str, QueryType, (&str, u16), bool) -> Result<DnsPacket>;

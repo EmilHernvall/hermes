@@ -5,14 +5,14 @@ use regex::{Regex,Captures};
 use tiny_http::{Server, Response, StatusCode, Request};
 use handlebars::Handlebars;
 
-use dns::context::ServerContext;
+use crate::dns::context::ServerContext;
 
 pub trait Action {
     fn get_regex(&self) -> Regex;
     fn initialize(&self, server: &mut WebServer);
     fn handle(&self,
               server: &WebServer,
-              mut request: Request,
+              request: Request,
               path_match: &Captures,
               json_input: bool,
               json_output: bool) -> Result<()>;

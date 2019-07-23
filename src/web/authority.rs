@@ -1,4 +1,4 @@
-use std::io::{Result, Error, ErrorKind, Read};
+use std::io::{Result, Error, ErrorKind};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::error::Error as RealError;
@@ -9,12 +9,12 @@ use tiny_http::{Response, Header, HeaderField, Request, Method, StatusCode};
 use ascii::AsciiString;
 use rustc_serialize::json::{self, ToJson, Json};
 
-use dns::context::ServerContext;
-use dns::authority::Zone;
-use dns::protocol::{DnsRecord,TransientTtl};
+use crate::dns::context::ServerContext;
+use crate::dns::authority::Zone;
+use crate::dns::protocol::{DnsRecord,TransientTtl};
 
-use web::util::{FormDataDecodable,rr_to_json,decode_json,parse_formdata};
-use web::server::{Action,WebServer};
+use crate::web::util::{FormDataDecodable,rr_to_json,decode_json,parse_formdata};
+use crate::web::server::{Action,WebServer};
 
 #[derive(Debug,RustcDecodable)]
 pub struct ZoneCreateRequest
@@ -166,7 +166,6 @@ impl AuthorityAction {
 
 impl Action for AuthorityAction {
 
-    #[allow(trivial_regex)]
     fn get_regex(&self) -> Regex {
         Regex::new(r"^/authority$").unwrap()
     }

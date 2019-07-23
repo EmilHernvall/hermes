@@ -4,11 +4,11 @@ use std::collections::{HashSet,HashMap,BTreeMap};
 use std::hash::{Hash,Hasher};
 use std::sync::{Arc, RwLock};
 use std::clone::Clone;
-use std::io::{Write,Result,Error,ErrorKind};
+use std::io::{Result,Error,ErrorKind};
 
 use chrono::*;
 
-use dns::protocol::{DnsRecord, QueryType, DnsPacket, ResultCode};
+use crate::dns::protocol::{DnsRecord, QueryType, DnsPacket, ResultCode};
 
 pub enum CacheState {
     PositiveCache,
@@ -339,7 +339,7 @@ mod tests {
 
     use super::*;
 
-    use dns::protocol::{DnsRecord, QueryType, ResultCode, TransientTtl};
+    use crate::dns::protocol::{DnsRecord, QueryType, ResultCode, TransientTtl};
 
     #[test]
     fn test_cache() {

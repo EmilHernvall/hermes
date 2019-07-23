@@ -4,12 +4,12 @@
 use std::cmp::Ordering;
 use std::fmt;
 use std::hash::{Hash,Hasher};
-use std::io::{Result, Read};
+use std::io::Result;
 use std::net::{Ipv4Addr,Ipv6Addr};
 
 use rand::random;
 
-use dns::buffer::{PacketBuffer, VectorPacketBuffer};
+use crate::dns::buffer::{PacketBuffer, VectorPacketBuffer};
 
 /// `QueryType` represents the requested Record Type of a query
 ///
@@ -156,7 +156,6 @@ pub enum DnsRecord {
 
 impl DnsRecord {
 
-    #[allow(identity_op,cyclomatic_complexity)]
     pub fn read<T: PacketBuffer>(buffer: &mut T) -> Result<DnsRecord> {
         let mut domain = String::new();
         buffer.read_qname(&mut domain)?;
@@ -315,7 +314,6 @@ impl DnsRecord {
         }
     }
 
-    #[allow(cyclomatic_complexity)]
     pub fn write<T: PacketBuffer>(&self, buffer: &mut T) -> Result<usize> {
 
         let start_pos = buffer.pos();
@@ -605,7 +603,6 @@ impl DnsHeader {
         12
     }
 
-    #[allow(identity_op)]
     pub fn read<T: PacketBuffer>(&mut self, buffer: &mut T) -> Result<()> {
         self.id = buffer.read_u16()?;
 
@@ -939,7 +936,7 @@ impl DnsPacket {
 mod tests {
 
     use super::*;
-    use dns::buffer::{PacketBuffer, VectorPacketBuffer};
+    use crate::dns::buffer::{PacketBuffer, VectorPacketBuffer};
 
     #[test]
     fn test_packet() {
