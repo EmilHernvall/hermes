@@ -236,11 +236,11 @@ impl Authority {
         Some(packet)
     }
 
-    pub fn read(&self) -> LockResult<RwLockReadGuard<Zones>> {
+    pub fn read(&self) -> LockResult<RwLockReadGuard<'_, Zones>> {
         self.zones.read()
     }
 
-    pub fn write(&self) -> LockResult<RwLockWriteGuard<Zones>> {
+    pub fn write(&self) -> LockResult<RwLockWriteGuard<'_, Zones>> {
         self.zones.write()
     }
 }

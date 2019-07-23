@@ -2,6 +2,7 @@
 name = "hermes"
 version = "0.1.0"
 authors = ["emil"]
+edition = "2018"
 
 [dependencies]
 rand = "0.3.13"

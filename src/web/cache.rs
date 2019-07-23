@@ -78,7 +78,7 @@ impl Action for CacheAction {
         &self,
         server: &WebServer,
         request: Request,
-        _: &Captures,
+        _: &Captures<'_>,
         _: bool,
         json_output: bool,
     ) -> Result<()> {

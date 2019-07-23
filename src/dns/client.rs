@@ -310,7 +310,7 @@ pub mod tests {
     use super::*;
     use crate::dns::protocol::{DnsPacket, DnsRecord, QueryType};
 
-    pub type StubCallback = Fn(&str, QueryType, (&str, u16), bool) -> Result<DnsPacket>;
+    pub type StubCallback = dyn Fn(&str, QueryType, (&str, u16), bool) -> Result<DnsPacket>;
 
     pub struct DnsStubClient {
         callback: Box<StubCallback>,

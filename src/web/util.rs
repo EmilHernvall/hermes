@@ -14,9 +14,9 @@ pub trait FormDataDecodable<T> {
 
 fn hex_to_num(c: char) -> u8 {
     match c {
-        '0'...'9' => (c as u8) - (b'0' as u8),
-        'a'...'f' => (c as u8) - (b'a' as u8) + 0xA,
-        'A'...'F' => (c as u8) - (b'A' as u8) + 0xA,
+        '0'..='9' => (c as u8) - (b'0' as u8),
+        'a'..='f' => (c as u8) - (b'a' as u8) + 0xA,
+        'A'..='F' => (c as u8) - (b'A' as u8) + 0xA,
         _ => 0,
     }
 }

@@ -56,7 +56,7 @@ pub trait DnsServer {
 fn resolve_cnames(
     lookup_list: &[DnsRecord],
     results: &mut Vec<DnsPacket>,
-    resolver: &mut Box<DnsResolver>,
+    resolver: &mut Box<dyn DnsResolver>,
     depth: u16,
 ) {
     if depth > 10 {

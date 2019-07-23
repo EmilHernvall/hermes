@@ -32,7 +32,7 @@ pub enum ResolveStrategy {
 pub struct ServerContext {
     pub authority: Authority,
     pub cache: SynchronizedCache,
-    pub client: Box<DnsClient + Sync + Send>,
+    pub client: Box<dyn DnsClient + Sync + Send>,
     pub dns_port: u16,
     pub api_port: u16,
     pub resolve_strategy: ResolveStrategy,
@@ -79,7 +79,7 @@ impl ServerContext {
         Ok(())
     }
 
-    pub fn create_resolver(&self, ptr: Arc<ServerContext>) -> Box<DnsResolver> {
+    pub fn create_resolver(&self, ptr: Arc<ServerContext>) -> Box<dyn DnsResolver> {
         match self.resolve_strategy {
             ResolveStrategy::Recursive => Box::new(RecursiveDnsResolver::new(ptr)),
             ResolveStrategy::Forward { ref host, port } => {

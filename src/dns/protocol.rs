@@ -704,7 +704,7 @@ impl DnsHeader {
 }
 
 impl fmt::Display for DnsHeader {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "DnsHeader:\n")?;
         write!(f, "\tid: {0}\n", self.id)?;
 
@@ -779,7 +779,7 @@ impl DnsQuestion {
 }
 
 impl fmt::Display for DnsQuestion {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "DnsQuestion:\n")?;
         write!(f, "\tname: {0}\n", self.name)?;
         write!(f, "\trecord type: {:?}\n", self.qtype)?;

@@ -3,15 +3,6 @@
 pub mod dns;
 pub mod web;
 
-extern crate ascii;
-extern crate chrono;
-extern crate getopts;
-extern crate handlebars;
-extern crate rand;
-extern crate regex;
-extern crate rustc_serialize;
-extern crate tiny_http;
-
 use std::env;
 use std::net::Ipv4Addr;
 use std::sync::Arc;

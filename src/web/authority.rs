@@ -181,7 +181,7 @@ impl Action for AuthorityAction {
         &self,
         server: &WebServer,
         mut request: Request,
-        _: &Captures,
+        _: &Captures<'_>,
         json_input: bool,
         json_output: bool,
     ) -> Result<()> {
@@ -326,7 +326,7 @@ impl Action for ZoneAction {
         &self,
         server: &WebServer,
         mut request: Request,
-        caps: &Captures,
+        caps: &Captures<'_>,
         json_input: bool,
         json_output: bool,
     ) -> Result<()> {

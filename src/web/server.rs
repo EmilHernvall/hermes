@@ -14,7 +14,7 @@ pub trait Action {
         &self,
         server: &WebServer,
         request: Request,
-        path_match: &Captures,
+        path_match: &Captures<'_>,
         json_input: bool,
         json_output: bool,
     ) -> Result<()>;
@@ -23,7 +23,7 @@ pub trait Action {
 pub struct WebServer {
     pub context: Arc<ServerContext>,
     pub handlebars: Handlebars,
-    pub actions: Vec<Box<Action>>,
+    pub actions: Vec<Box<dyn Action>>,
 }
 
 impl WebServer {
@@ -46,7 +46,7 @@ impl WebServer {
         server
     }
 
-    pub fn register_action(&mut self, action: Box<Action>) {
+    pub fn register_action(&mut self, action: Box<dyn Action>) {
         action.initialize(self);
         self.actions.push(action);
     }
@@ -93,7 +93,7 @@ impl WebServer {
                 None => false,
             };
 
-            let matching_actions: Vec<&Box<Action>> = self
+            let matching_actions: Vec<&Box<dyn Action>> = self
                 .actions
                 .iter()
                 .filter(|x| x.get_regex().is_match(&request.url()))
