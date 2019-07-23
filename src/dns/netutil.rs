@@ -1,4 +1,4 @@
-use std::io::{Result,Write,Read};
+use std::io::{Read, Result, Write};
 use std::net::TcpStream;
 
 pub fn read_packet_length(stream: &mut TcpStream) -> Result<u16> {

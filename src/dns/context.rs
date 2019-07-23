@@ -1,17 +1,17 @@
 //! The `ServerContext in this thread holds the common state across the server
 
 use std::io::Result;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize,Ordering};
 
-use crate::dns::resolve::{DnsResolver,RecursiveDnsResolver,ForwardingDnsResolver};
-use crate::dns::client::{DnsClient,DnsNetworkClient};
-use crate::dns::cache::SynchronizedCache;
 use crate::dns::authority::Authority;
+use crate::dns::cache::SynchronizedCache;
+use crate::dns::client::{DnsClient, DnsNetworkClient};
+use crate::dns::resolve::{DnsResolver, ForwardingDnsResolver, RecursiveDnsResolver};
 
 pub struct ServerStatistics {
     pub tcp_query_count: AtomicUsize,
-    pub udp_query_count: AtomicUsize
+    pub udp_query_count: AtomicUsize,
 }
 
 impl ServerStatistics {
@@ -26,10 +26,7 @@ impl ServerStatistics {
 
 pub enum ResolveStrategy {
     Recursive,
-    Forward {
-        host: String,
-        port: u16
-    }
+    Forward { host: String, port: u16 },
 }
 
 pub struct ServerContext {
@@ -43,7 +40,7 @@ pub struct ServerContext {
     pub enable_udp: bool,
     pub enable_tcp: bool,
     pub enable_api: bool,
-    pub statistics: ServerStatistics
+    pub statistics: ServerStatistics,
 }
 
 impl Default for ServerContext {
@@ -67,8 +64,8 @@ impl ServerContext {
             enable_api: true,
             statistics: ServerStatistics {
                 tcp_query_count: AtomicUsize::new(0),
-                udp_query_count: AtomicUsize::new(0)
-            }
+                udp_query_count: AtomicUsize::new(0),
+            },
         }
     }
 
@@ -95,18 +92,17 @@ impl ServerContext {
 #[cfg(test)]
 pub mod tests {
 
-    use std::sync::Arc;
     use std::sync::atomic::AtomicUsize;
+    use std::sync::Arc;
 
     use crate::dns::authority::Authority;
     use crate::dns::cache::SynchronizedCache;
 
-    use crate::dns::client::tests::{StubCallback,DnsStubClient};
+    use crate::dns::client::tests::{DnsStubClient, StubCallback};
 
     use super::*;
 
     pub fn create_test_context(callback: Box<StubCallback>) -> Arc<ServerContext> {
-
         Arc::new(ServerContext {
             authority: Authority::new(),
             cache: SynchronizedCache::new(),
@@ -120,10 +116,9 @@ pub mod tests {
             enable_api: true,
             statistics: ServerStatistics {
                 tcp_query_count: AtomicUsize::new(0),
-                udp_query_count: AtomicUsize::new(0)
-            }
+                udp_query_count: AtomicUsize::new(0),
+            },
         })
-
     }
 
 }

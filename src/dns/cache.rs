@@ -1,25 +1,25 @@
 //! a threadsafe cache for DNS information
 
-use std::collections::{HashSet,HashMap,BTreeMap};
-use std::hash::{Hash,Hasher};
-use std::sync::{Arc, RwLock};
 use std::clone::Clone;
-use std::io::{Result,Error,ErrorKind};
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::hash::{Hash, Hasher};
+use std::io::{Error, ErrorKind, Result};
+use std::sync::{Arc, RwLock};
 
 use chrono::*;
 
-use crate::dns::protocol::{DnsRecord, QueryType, DnsPacket, ResultCode};
+use crate::dns::protocol::{DnsPacket, DnsRecord, QueryType, ResultCode};
 
 pub enum CacheState {
     PositiveCache,
     NegativeCache,
-    NotCached
+    NotCached,
 }
 
-#[derive(Clone,Eq,Debug)]
+#[derive(Clone, Eq, Debug)]
 pub struct RecordEntry {
     pub record: DnsRecord,
-    pub timestamp: DateTime<Local>
+    pub timestamp: DateTime<Local>,
 }
 
 impl PartialEq<RecordEntry> for RecordEntry {
@@ -29,12 +29,15 @@ impl PartialEq<RecordEntry> for RecordEntry {
 }
 
 impl Hash for RecordEntry {
-    fn hash<H>(&self, state: &mut H) where H: Hasher {
+    fn hash<H>(&self, state: &mut H)
+    where
+        H: Hasher,
+    {
         self.record.hash(state);
     }
 }
 
-#[derive(Clone,Debug)]
+#[derive(Clone, Debug)]
 pub enum RecordSet {
     NoRecords {
         qtype: QueryType,
@@ -43,16 +46,16 @@ pub enum RecordSet {
     },
     Records {
         qtype: QueryType,
-        records: HashSet<RecordEntry>
-    }
+        records: HashSet<RecordEntry>,
+    },
 }
 
-#[derive(Clone,Debug)]
+#[derive(Clone, Debug)]
 pub struct DomainEntry {
     pub domain: String,
     pub record_types: HashMap<QueryType, RecordSet>,
     pub hits: u32,
-    pub updates: u32
+    pub updates: u32,
 }
 
 impl DomainEntry {
@@ -61,7 +64,7 @@ impl DomainEntry {
             domain: domain,
             record_types: HashMap::new(),
             hits: 0,
-            updates: 0
+            updates: 0,
         }
     }
 
@@ -71,7 +74,7 @@ impl DomainEntry {
         let new_set = RecordSet::NoRecords {
             qtype: qtype,
             ttl: ttl,
-            timestamp: Local::now()
+            timestamp: Local::now(),
         };
 
         self.record_types.insert(qtype, new_set);
@@ -81,13 +84,14 @@ impl DomainEntry {
         self.updates += 1;
 
         let entry = RecordEntry {
-                record: rec.clone(),
-                timestamp: Local::now()
-            };
+            record: rec.clone(),
+            timestamp: Local::now(),
+        };
 
-        if let Some(&mut RecordSet::Records { ref mut records, .. }) =
-            self.record_types.get_mut(&rec.get_querytype()) {
-
+        if let Some(&mut RecordSet::Records {
+            ref mut records, ..
+        }) = self.record_types.get_mut(&rec.get_querytype())
+        {
             if records.contains(&entry) {
                 records.remove(&entry);
             }
@@ -101,7 +105,7 @@ impl DomainEntry {
 
         let new_set = RecordSet::Records {
             qtype: rec.get_querytype(),
-            records: records
+            records: records,
         };
 
         self.record_types.insert(rec.get_querytype(), new_set);
@@ -130,7 +134,7 @@ impl DomainEntry {
                 } else {
                     CacheState::NotCached
                 }
-            },
+            }
             Some(&RecordSet::NoRecords { ttl, timestamp, .. }) => {
                 let now = Local::now();
                 let ttl_offset = Duration::seconds(ttl as i64);
@@ -141,20 +145,17 @@ impl DomainEntry {
                 } else {
                     CacheState::NegativeCache
                 }
-            },
-            None => CacheState::NotCached
+            }
+            None => CacheState::NotCached,
         }
     }
 
-    pub fn fill_queryresult(&self,
-                            qtype: QueryType,
-                            result_vec: &mut Vec<DnsRecord>) {
-
+    pub fn fill_queryresult(&self, qtype: QueryType, result_vec: &mut Vec<DnsRecord>) {
         let now = Local::now();
 
         let current_set = match self.record_types.get(&qtype) {
             Some(x) => x,
-            None => return
+            None => return,
         };
 
         if let RecordSet::Records { ref records, .. } = *current_set {
@@ -175,34 +176,31 @@ impl DomainEntry {
 
 #[derive(Default)]
 pub struct Cache {
-    domain_entries: BTreeMap<String, Arc<DomainEntry>>
+    domain_entries: BTreeMap<String, Arc<DomainEntry>>,
 }
 
 impl Cache {
     pub fn new() -> Cache {
         Cache {
-            domain_entries: BTreeMap::new()
+            domain_entries: BTreeMap::new(),
         }
     }
 
-    fn get_cache_state(&mut self,
-                       qname: &str,
-                       qtype: QueryType) -> CacheState {
-
+    fn get_cache_state(&mut self, qname: &str, qtype: QueryType) -> CacheState {
         match self.domain_entries.get(qname) {
             Some(x) => x.get_cache_state(qtype),
-            None => CacheState::NotCached
+            None => CacheState::NotCached,
         }
     }
 
-    fn fill_queryresult(&mut self,
-                        qname: &str,
-                        qtype: QueryType,
-                        result_vec: &mut Vec<DnsRecord>,
-                        increment_stats: bool) {
-
+    fn fill_queryresult(
+        &mut self,
+        qname: &str,
+        qtype: QueryType,
+        result_vec: &mut Vec<DnsRecord>,
+        increment_stats: bool,
+    ) {
         if let Some(domain_entry) = self.domain_entries.get_mut(qname).and_then(Arc::get_mut) {
-
             if increment_stats {
                 domain_entry.hits += 1
             }
@@ -211,10 +209,7 @@ impl Cache {
         }
     }
 
-    pub fn lookup(&mut self,
-                  qname: &str,
-                  qtype: QueryType) -> Option<DnsPacket> {
-
+    pub fn lookup(&mut self, qname: &str, qtype: QueryType) -> Option<DnsPacket> {
         match self.get_cache_state(qname, qtype) {
             CacheState::PositiveCache => {
                 let mut qr = DnsPacket::new();
@@ -222,28 +217,25 @@ impl Cache {
                 self.fill_queryresult(qname, QueryType::NS, &mut qr.authorities, false);
 
                 Some(qr)
-            },
+            }
             CacheState::NegativeCache => {
                 let mut qr = DnsPacket::new();
                 qr.header.rescode = ResultCode::NXDOMAIN;
 
                 Some(qr)
-            },
-            CacheState::NotCached => None
+            }
+            CacheState::NotCached => None,
         }
     }
 
     pub fn store(&mut self, records: &[DnsRecord]) {
-
         for rec in records {
             let domain = match rec.get_domain() {
                 Some(x) => x,
-                None => continue
+                None => continue,
             };
 
-            if let Some(ref mut rs) = self.domain_entries.get_mut(&domain)
-                .and_then(Arc::get_mut) {
-
+            if let Some(ref mut rs) = self.domain_entries.get_mut(&domain).and_then(Arc::get_mut) {
                 rs.store_record(rec);
                 continue;
             }
@@ -255,11 +247,9 @@ impl Cache {
     }
 
     pub fn store_nxdomain(&mut self, qname: &str, qtype: QueryType, ttl: u32) {
-        if let Some(ref mut rs) = self.domain_entries.get_mut(qname)
-            .and_then(Arc::get_mut) {
-
+        if let Some(ref mut rs) = self.domain_entries.get_mut(qname).and_then(Arc::get_mut) {
             rs.store_nxdomain(qtype, ttl);
-            return
+            return;
         }
 
         let mut rs = DomainEntry::new(qname.to_string());
@@ -270,20 +260,20 @@ impl Cache {
 
 #[derive(Default)]
 pub struct SynchronizedCache {
-    pub cache: RwLock<Cache>
+    pub cache: RwLock<Cache>,
 }
 
 impl SynchronizedCache {
     pub fn new() -> SynchronizedCache {
         SynchronizedCache {
-            cache: RwLock::new(Cache::new())
+            cache: RwLock::new(Cache::new()),
         }
     }
 
     pub fn list(&self) -> Result<Vec<Arc<DomainEntry>>> {
         let cache = match self.cache.read() {
             Ok(x) => x,
-            Err(_) => return Err(Error::new(ErrorKind::Other, "Failed to acquire lock"))
+            Err(_) => return Err(Error::new(ErrorKind::Other, "Failed to acquire lock")),
         };
 
         let mut list = Vec::new();
@@ -295,13 +285,10 @@ impl SynchronizedCache {
         Ok(list)
     }
 
-    pub fn lookup(&self,
-                  qname: &str,
-                  qtype: QueryType) -> Option<DnsPacket> {
-
+    pub fn lookup(&self, qname: &str, qtype: QueryType) -> Option<DnsPacket> {
         let mut cache = match self.cache.write() {
             Ok(x) => x,
-            Err(_) => return None
+            Err(_) => return None,
         };
 
         cache.lookup(qname, qtype)
@@ -310,7 +297,7 @@ impl SynchronizedCache {
     pub fn store(&self, records: &[DnsRecord]) -> Result<()> {
         let mut cache = match self.cache.write() {
             Ok(x) => x,
-            Err(_) => return Err(Error::new(ErrorKind::Other, "Failed to acquire lock"))
+            Err(_) => return Err(Error::new(ErrorKind::Other, "Failed to acquire lock")),
         };
 
         cache.store(records);
@@ -318,14 +305,10 @@ impl SynchronizedCache {
         Ok(())
     }
 
-    pub fn store_nxdomain(&self,
-                          qname: &str,
-                          qtype: QueryType,
-                          ttl: u32) -> Result<()> {
-
+    pub fn store_nxdomain(&self, qname: &str, qtype: QueryType, ttl: u32) -> Result<()> {
         let mut cache = match self.cache.write() {
             Ok(x) => x,
-            Err(_) => return Err(Error::new(ErrorKind::Other, "Failed to acquire lock"))
+            Err(_) => return Err(Error::new(ErrorKind::Other, "Failed to acquire lock")),
         };
 
         cache.store_nxdomain(qname, qtype, ttl);
@@ -371,17 +354,17 @@ mod tests {
         records.push(DnsRecord::A {
             domain: "www.google.com".to_string(),
             addr: "127.0.0.1".parse().unwrap(),
-            ttl: TransientTtl(3600)
+            ttl: TransientTtl(3600),
         });
         records.push(DnsRecord::A {
             domain: "www.yahoo.com".to_string(),
             addr: "127.0.0.2".parse().unwrap(),
-            ttl: TransientTtl(0)
+            ttl: TransientTtl(0),
         });
         records.push(DnsRecord::CNAME {
             domain: "www.microsoft.com".to_string(),
             host: "www.somecdn.com".to_string(),
-            ttl: TransientTtl(3600)
+            ttl: TransientTtl(3600),
         });
 
         cache.store(&records);
@@ -414,7 +397,7 @@ mod tests {
         records2.push(DnsRecord::A {
             domain: "www.yahoo.com".to_string(),
             addr: "127.0.0.2".parse().unwrap(),
-            ttl: TransientTtl(3600)
+            ttl: TransientTtl(3600),
         });
 
         cache.store(&records2);
@@ -426,11 +409,53 @@ mod tests {
 
         // Check stat counter behavior
         assert_eq!(3, cache.domain_entries.len());
-        assert_eq!(1, cache.domain_entries.get(&"www.google.com".to_string()).unwrap().hits);
-        assert_eq!(2, cache.domain_entries.get(&"www.google.com".to_string()).unwrap().updates);
-        assert_eq!(1, cache.domain_entries.get(&"www.yahoo.com".to_string()).unwrap().hits);
-        assert_eq!(3, cache.domain_entries.get(&"www.yahoo.com".to_string()).unwrap().updates);
-        assert_eq!(1, cache.domain_entries.get(&"www.microsoft.com".to_string()).unwrap().updates);
-        assert_eq!(1, cache.domain_entries.get(&"www.microsoft.com".to_string()).unwrap().hits);
+        assert_eq!(
+            1,
+            cache
+                .domain_entries
+                .get(&"www.google.com".to_string())
+                .unwrap()
+                .hits
+        );
+        assert_eq!(
+            2,
+            cache
+                .domain_entries
+                .get(&"www.google.com".to_string())
+                .unwrap()
+                .updates
+        );
+        assert_eq!(
+            1,
+            cache
+                .domain_entries
+                .get(&"www.yahoo.com".to_string())
+                .unwrap()
+                .hits
+        );
+        assert_eq!(
+            3,
+            cache
+                .domain_entries
+                .get(&"www.yahoo.com".to_string())
+                .unwrap()
+                .updates
+        );
+        assert_eq!(
+            1,
+            cache
+                .domain_entries
+                .get(&"www.microsoft.com".to_string())
+                .unwrap()
+                .updates
+        );
+        assert_eq!(
+            1,
+            cache
+                .domain_entries
+                .get(&"www.microsoft.com".to_string())
+                .unwrap()
+                .hits
+        );
     }
 }
