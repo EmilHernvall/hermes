@@ -152,10 +152,10 @@ impl DnsResolver for RecursiveDnsResolver {
             let ns_copy = ns.clone();
 
             let server = (ns_copy.as_str(), 53);
-            let response = try!(self.context.client.send_query(qname,
+            let response = self.context.client.send_query(qname,
                                                                qtype.clone(),
                                                                server,
-                                                               false));
+                                                               false)?;
 
             // If we've got an actual answer, we're done!
             if !response.answers.is_empty() &&
@@ -193,9 +193,9 @@ impl DnsResolver for RecursiveDnsResolver {
             };
 
             // Recursively resolve the NS
-            let recursive_response = try!(self.resolve(&new_ns_name,
+            let recursive_response = self.resolve(&new_ns_name,
                                                        QueryType::A,
-                                                       true));
+                                                       true)?;
 
             // Pick a random IP and restart
             if let Some(new_ns) = recursive_response.get_random_a() {

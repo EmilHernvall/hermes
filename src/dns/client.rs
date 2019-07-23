@@ -99,15 +99,15 @@ impl DnsNetworkClient {
 
         // Send query
         let mut req_buffer = BytePacketBuffer::new();
-        try!(packet.write(&mut req_buffer, 0xFFFF));
+        packet.write(&mut req_buffer, 0xFFFF)?;
 
-        let mut socket = try!(TcpStream::connect(server));
+        let mut socket = TcpStream::connect(server)?;
 
-        try!(write_packet_length(&mut socket, req_buffer.pos()));
-        try!(socket.write(&req_buffer.buf[0..req_buffer.pos]));
-        try!(socket.flush());
+        write_packet_length(&mut socket, req_buffer.pos())?;
+        socket.write(&req_buffer.buf[0..req_buffer.pos])?;
+        socket.flush()?;
 
-        let _ = try!(read_packet_length(&mut socket));
+        let _ = read_packet_length(&mut socket)?;
 
         let mut stream_buffer = StreamPacketBuffer::new(&mut socket);
         DnsPacket::from_buffer(&mut stream_buffer)
@@ -157,8 +157,8 @@ impl DnsNetworkClient {
 
         // Send query
         let mut req_buffer = BytePacketBuffer::new();
-        try!(packet.write(&mut req_buffer, 512));
-        try!(self.socket.send_to(&req_buffer.buf[0..req_buffer.pos], server));
+        packet.write(&mut req_buffer, 512)?;
+        self.socket.send_to(&req_buffer.buf[0..req_buffer.pos], server)?;
 
         // Wait for response
         if let Ok(res) = rx.recv() {
@@ -193,10 +193,10 @@ impl DnsClient for DnsNetworkClient {
 
         // Start the thread for handling incoming responses
         {
-            let socket_copy = try!(self.socket.try_clone());
+            let socket_copy = self.socket.try_clone()?;
             let pending_queries_lock = self.pending_queries.clone();
 
-            try!(Builder::new().name("DnsNetworkClient-worker-thread".into()).spawn(
+            Builder::new().name("DnsNetworkClient-worker-thread".into()).spawn(
                 move || {
                     loop {
                         // Read data into a buffer
@@ -244,14 +244,14 @@ impl DnsClient for DnsNetworkClient {
                             }
                         }
                     }
-                }));
+                })?;
         }
 
         // Start the thread for timing out requests
         {
             let pending_queries_lock = self.pending_queries.clone();
 
-            try!(Builder::new().name("DnsNetworkClient-timeout-thread".into()).spawn(
+            Builder::new().name("DnsNetworkClient-timeout-thread".into()).spawn(
                 move || {
                     let timeout = Duration::seconds(1);
                     loop {
@@ -276,7 +276,7 @@ impl DnsClient for DnsNetworkClient {
 
                         sleep(SleepDuration::from_millis(100));
                     }
-                }));
+                })?;
         }
 
         Ok(())
@@ -288,7 +288,7 @@ impl DnsClient for DnsNetworkClient {
                   server: (&str, u16),
                   recursive: bool) -> Result<DnsPacket> {
 
-        let packet = try!(self.send_udp_query(qname, qtype, server, recursive));
+        let packet = self.send_udp_query(qname, qtype, server, recursive)?;
         if !packet.header.truncated_message {
             return Ok(packet);
         }

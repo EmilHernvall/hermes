@@ -74,10 +74,10 @@ impl ServerContext {
 
     pub fn initialize(&mut self) -> Result<()> {
         // Start UDP client thread
-        try!(self.client.run());
+        self.client.run()?;
 
         // Load authority data
-        try!(self.authority.load());
+        self.authority.load()?;
 
         Ok(())
     }

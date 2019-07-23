@@ -59,7 +59,7 @@ impl<'a> Zones {
     }
 
     pub fn load(&mut self) -> Result<()> {
-        let zones_dir = try!(Path::new("zones").read_dir());
+        let zones_dir = Path::new("zones").read_dir()?;
 
         for wrapped_filename in zones_dir {
             let filename = match wrapped_filename {
@@ -75,19 +75,19 @@ impl<'a> Zones {
             let mut buffer = StreamPacketBuffer::new(&mut zone_file);
 
             let mut zone = Zone::new(String::new(), String::new(), String::new());
-            try!(buffer.read_qname(&mut zone.domain));
-            try!(buffer.read_qname(&mut zone.m_name));
-            try!(buffer.read_qname(&mut zone.r_name));
-            zone.serial = try!(buffer.read_u32());
-            zone.refresh = try!(buffer.read_u32());
-            zone.retry = try!(buffer.read_u32());
-            zone.expire = try!(buffer.read_u32());
-            zone.minimum = try!(buffer.read_u32());
+            buffer.read_qname(&mut zone.domain)?;
+            buffer.read_qname(&mut zone.m_name)?;
+            buffer.read_qname(&mut zone.r_name)?;
+            zone.serial = buffer.read_u32()?;
+            zone.refresh = buffer.read_u32()?;
+            zone.retry = buffer.read_u32()?;
+            zone.expire = buffer.read_u32()?;
+            zone.minimum = buffer.read_u32()?;
 
-            let record_count = try!(buffer.read_u32());
+            let record_count = buffer.read_u32()?;
 
             for _ in 0..record_count {
-                let rr = try!(DnsRecord::read(&mut buffer));
+                let rr = DnsRecord::read(&mut buffer)?;
                 zone.add_record(&rr);
             }
 
@@ -172,7 +172,7 @@ impl Authority {
             Err(_) => return Err(Error::new(ErrorKind::Other, "Failed to acquire lock"))
         };
 
-        try!(zones.load());
+        zones.load()?;
 
         Ok(())
     }

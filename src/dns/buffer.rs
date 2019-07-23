@@ -17,30 +17,30 @@ pub trait PacketBuffer {
     fn save_label(&mut self, label: &str, pos: usize);
 
     fn write_u8(&mut self, val: u8) -> Result<()> {
-        try!(self.write(val));
+        self.write(val)?;
 
         Ok(())
     }
 
     fn set_u16(&mut self, pos: usize, val: u16) -> Result<()> {
-        try!(self.set(pos,(val >> 8) as u8));
-        try!(self.set(pos+1,(val & 0xFF) as u8));
+        self.set(pos,(val >> 8) as u8)?;
+        self.set(pos+1,(val & 0xFF) as u8)?;
 
         Ok(())
     }
 
     fn write_u16(&mut self, val: u16) -> Result<()> {
-        try!(self.write((val >> 8) as u8));
-        try!(self.write((val & 0xFF) as u8));
+        self.write((val >> 8) as u8)?;
+        self.write((val & 0xFF) as u8)?;
 
         Ok(())
     }
 
     fn write_u32(&mut self, val: u32) -> Result<()> {
-        try!(self.write(((val >> 24) & 0xFF) as u8));
-        try!(self.write(((val >> 16) & 0xFF) as u8));
-        try!(self.write(((val >> 8) & 0xFF) as u8));
-        try!(self.write(((val >> 0) & 0xFF) as u8));
+        self.write(((val >> 24) & 0xFF) as u8)?;
+        self.write(((val >> 16) & 0xFF) as u8)?;
+        self.write(((val >> 8) & 0xFF) as u8)?;
+        self.write(((val >> 0) & 0xFF) as u8)?;
 
         Ok(())
     }
@@ -55,7 +55,7 @@ pub trait PacketBuffer {
             if let Some(prev_pos) = self.find_label(&search_lbl) {
 
                 let jump_inst = (prev_pos as u16) | 0xC000;
-                try!(self.write_u16(jump_inst));
+                self.write_u16(jump_inst)?;
                 jump_performed = true;
 
                 break;
@@ -65,14 +65,14 @@ pub trait PacketBuffer {
             self.save_label(&search_lbl, pos);
 
             let len = label.len();
-            try!(self.write_u8(len as u8));
+            self.write_u8(len as u8)?;
             for b in label.as_bytes() {
-                try!(self.write_u8(*b));
+                self.write_u8(*b)?;
             }
         }
 
         if !jump_performed {
-            try!(self.write_u8(0));
+            self.write_u8(0)?;
         }
 
         Ok(())
@@ -80,8 +80,8 @@ pub trait PacketBuffer {
 
     fn read_u16(&mut self) -> Result<u16>
     {
-        let res = ((try!(self.read()) as u16) << 8) |
-                  (try!(self.read()) as u16);
+        let res = ((self.read()? as u16) << 8) |
+                  (self.read()? as u16);
 
         Ok(res)
     }
@@ -89,10 +89,10 @@ pub trait PacketBuffer {
     #[allow(identity_op)]
     fn read_u32(&mut self) -> Result<u32>
     {
-        let res = ((try!(self.read()) as u32) << 24) |
-                  ((try!(self.read()) as u32) << 16) |
-                  ((try!(self.read()) as u32) << 8) |
-                  ((try!(self.read()) as u32) << 0);
+        let res = ((self.read()? as u32) << 24) |
+                  ((self.read()? as u32) << 16) |
+                  ((self.read()? as u32) << 8) |
+                  ((self.read()? as u32) << 0);
 
         Ok(res)
     }
@@ -104,7 +104,7 @@ pub trait PacketBuffer {
 
         let mut delim = "";
         loop {
-            let len = try!(self.get(pos));
+            let len = self.get(pos)?;
 
             // A two byte sequence, where the two highest bits of the first byte is
             // set, represents a offset relative to the start of the buffer. We
@@ -115,10 +115,10 @@ pub trait PacketBuffer {
                 // When a jump is performed, we only modify the shared buffer
                 // position once, and avoid making the change later on.
                 if !jumped {
-                    try!(self.seek(pos+2));
+                    self.seek(pos+2)?;
                 }
 
-                let b2 = try!(self.get(pos+1)) as u16;
+                let b2 = self.get(pos+1)? as u16;
                 let offset = (((len as u16) ^ 0xC0) << 8) | b2;
                 pos = offset as usize;
                 jumped = true;
@@ -134,7 +134,7 @@ pub trait PacketBuffer {
 
             outstr.push_str(delim);
 
-            let str_buffer = try!(self.get_range(pos, len as usize));
+            let str_buffer = self.get_range(pos, len as usize)?;
             outstr.push_str(&String::from_utf8_lossy(str_buffer).to_lowercase());
 
             delim = ".";
@@ -143,7 +143,7 @@ pub trait PacketBuffer {
         }
 
         if !jumped {
-            try!(self.seek(pos));
+            self.seek(pos)?;
         }
 
         Ok(())
@@ -250,7 +250,7 @@ impl<'a, T> PacketBuffer for StreamPacketBuffer<'a, T> where T: Read + 'a {
     fn read(&mut self) -> Result<u8> {
         while self.pos >= self.buffer.len() {
             let mut local_buffer = [0; 1];
-            try!(self.stream.read(&mut local_buffer));
+            self.stream.read(&mut local_buffer)?;
             self.buffer.push(local_buffer[0]);
         }
 
@@ -263,7 +263,7 @@ impl<'a, T> PacketBuffer for StreamPacketBuffer<'a, T> where T: Read + 'a {
     fn get(&mut self, pos: usize) -> Result<u8> {
         while pos >= self.buffer.len() {
             let mut local_buffer = [0; 1];
-            try!(self.stream.read(&mut local_buffer));
+            self.stream.read(&mut local_buffer)?;
             self.buffer.push(local_buffer[0]);
         }
 
@@ -273,7 +273,7 @@ impl<'a, T> PacketBuffer for StreamPacketBuffer<'a, T> where T: Read + 'a {
     fn get_range(&mut self, start: usize, len: usize) -> Result<&[u8]> {
         while start+len > self.buffer.len() {
             let mut local_buffer = [0; 1];
-            try!(self.stream.read(&mut local_buffer));
+            self.stream.read(&mut local_buffer)?;
             self.buffer.push(local_buffer[0]);
         }
 

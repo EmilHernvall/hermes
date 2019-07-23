@@ -159,17 +159,17 @@ impl DnsRecord {
     #[allow(identity_op,cyclomatic_complexity)]
     pub fn read<T: PacketBuffer>(buffer: &mut T) -> Result<DnsRecord> {
         let mut domain = String::new();
-        try!(buffer.read_qname(&mut domain));
+        buffer.read_qname(&mut domain)?;
 
-        let qtype_num = try!(buffer.read_u16());
+        let qtype_num = buffer.read_u16()?;
         let qtype = QueryType::from_num(qtype_num);
-        let class = try!(buffer.read_u16());
-        let ttl = try!(buffer.read_u32());
-        let data_len = try!(buffer.read_u16());
+        let class = buffer.read_u16()?;
+        let ttl = buffer.read_u32()?;
+        let data_len = buffer.read_u16()?;
 
         match qtype {
             QueryType::A  => {
-                let raw_addr = try!(buffer.read_u32());
+                let raw_addr = buffer.read_u32()?;
                 let addr = Ipv4Addr::new(((raw_addr >> 24) & 0xFF) as u8,
                                          ((raw_addr >> 16) & 0xFF) as u8,
                                          ((raw_addr >> 8) & 0xFF) as u8,
@@ -182,10 +182,10 @@ impl DnsRecord {
                 })
             },
             QueryType::AAAA => {
-                let raw_addr1 = try!(buffer.read_u32());
-                let raw_addr2 = try!(buffer.read_u32());
-                let raw_addr3 = try!(buffer.read_u32());
-                let raw_addr4 = try!(buffer.read_u32());
+                let raw_addr1 = buffer.read_u32()?;
+                let raw_addr2 = buffer.read_u32()?;
+                let raw_addr3 = buffer.read_u32()?;
+                let raw_addr4 = buffer.read_u32()?;
                 let addr = Ipv6Addr::new(((raw_addr1 >> 16) & 0xFFFF) as u16,
                                          ((raw_addr1 >> 0) & 0xFFFF) as u16,
                                          ((raw_addr2 >> 16) & 0xFFFF) as u16,
@@ -203,7 +203,7 @@ impl DnsRecord {
             },
             QueryType::NS => {
                 let mut ns = String::new();
-                try!(buffer.read_qname(&mut ns));
+                buffer.read_qname(&mut ns)?;
 
                 Ok(DnsRecord::NS {
                     domain: domain,
@@ -213,7 +213,7 @@ impl DnsRecord {
             },
             QueryType::CNAME => {
                 let mut cname = String::new();
-                try!(buffer.read_qname(&mut cname));
+                buffer.read_qname(&mut cname)?;
 
                 Ok(DnsRecord::CNAME {
                     domain: domain,
@@ -222,12 +222,12 @@ impl DnsRecord {
                 })
             },
             QueryType::SRV => {
-                let priority = try!(buffer.read_u16());
-                let weight = try!(buffer.read_u16());
-                let port = try!(buffer.read_u16());
+                let priority = buffer.read_u16()?;
+                let weight = buffer.read_u16()?;
+                let port = buffer.read_u16()?;
 
                 let mut srv = String::new();
-                try!(buffer.read_qname(&mut srv));
+                buffer.read_qname(&mut srv)?;
 
                 Ok(DnsRecord::SRV {
                     domain: domain,
@@ -239,9 +239,9 @@ impl DnsRecord {
                 })
             },
             QueryType::MX => {
-                let priority = try!(buffer.read_u16());
+                let priority = buffer.read_u16()?;
                 let mut mx = String::new();
-                try!(buffer.read_qname(&mut mx));
+                buffer.read_qname(&mut mx)?;
 
                 Ok(DnsRecord::MX {
                     domain: domain,
@@ -252,16 +252,16 @@ impl DnsRecord {
             },
             QueryType::SOA => {
                 let mut m_name = String::new();
-                try!(buffer.read_qname(&mut m_name));
+                buffer.read_qname(&mut m_name)?;
 
                 let mut r_name = String::new();
-                try!(buffer.read_qname(&mut r_name));
+                buffer.read_qname(&mut r_name)?;
 
-                let serial = try!(buffer.read_u32());
-                let refresh = try!(buffer.read_u32());
-                let retry = try!(buffer.read_u32());
-                let expire = try!(buffer.read_u32());
-                let minimum = try!(buffer.read_u32());
+                let serial = buffer.read_u32()?;
+                let refresh = buffer.read_u32()?;
+                let retry = buffer.read_u32()?;
+                let expire = buffer.read_u32()?;
+                let minimum = buffer.read_u32()?;
 
                 Ok(DnsRecord::SOA {
                     domain: domain,
@@ -279,9 +279,9 @@ impl DnsRecord {
                 let mut txt = String::new();
 
                 let cur_pos = buffer.pos();
-                txt.push_str(&String::from_utf8_lossy(try!(buffer.get_range(cur_pos, data_len as usize))));
+                txt.push_str(&String::from_utf8_lossy(buffer.get_range(cur_pos, data_len as usize)?));
 
-                try!(buffer.step(data_len as usize));
+                buffer.step(data_len as usize)?;
 
                 Ok(DnsRecord::TXT {
                     domain: domain,
@@ -293,8 +293,8 @@ impl DnsRecord {
                 let mut data = String::new();
 
                 let cur_pos = buffer.pos();
-                data.push_str(&String::from_utf8_lossy(try!(buffer.get_range(cur_pos, data_len as usize))));
-                try!(buffer.step(data_len as usize));
+                data.push_str(&String::from_utf8_lossy(buffer.get_range(cur_pos, data_len as usize)?));
+                buffer.step(data_len as usize)?;
 
                 Ok(DnsRecord::OPT {
                     packet_len: class,
@@ -303,7 +303,7 @@ impl DnsRecord {
                 })
             },
             QueryType::UNKNOWN(_) => {
-                try!(buffer.step(data_len as usize));
+                buffer.step(data_len as usize)?;
 
                 Ok(DnsRecord::UNKNOWN {
                     domain: domain,
@@ -322,88 +322,88 @@ impl DnsRecord {
 
         match *self {
             DnsRecord::A { ref domain, ref addr, ttl: TransientTtl(ttl) } => {
-                try!(buffer.write_qname(domain));
-                try!(buffer.write_u16(QueryType::A.to_num()));
-                try!(buffer.write_u16(1));
-                try!(buffer.write_u32(ttl));
-                try!(buffer.write_u16(4));
+                buffer.write_qname(domain)?;
+                buffer.write_u16(QueryType::A.to_num())?;
+                buffer.write_u16(1)?;
+                buffer.write_u32(ttl)?;
+                buffer.write_u16(4)?;
 
                 let octets = addr.octets();
-                try!(buffer.write_u8(octets[0]));
-                try!(buffer.write_u8(octets[1]));
-                try!(buffer.write_u8(octets[2]));
-                try!(buffer.write_u8(octets[3]));
+                buffer.write_u8(octets[0])?;
+                buffer.write_u8(octets[1])?;
+                buffer.write_u8(octets[2])?;
+                buffer.write_u8(octets[3])?;
             },
             DnsRecord::AAAA { ref domain, ref addr, ttl: TransientTtl(ttl) } => {
-                try!(buffer.write_qname(domain));
-                try!(buffer.write_u16(QueryType::AAAA.to_num()));
-                try!(buffer.write_u16(1));
-                try!(buffer.write_u32(ttl));
-                try!(buffer.write_u16(16));
+                buffer.write_qname(domain)?;
+                buffer.write_u16(QueryType::AAAA.to_num())?;
+                buffer.write_u16(1)?;
+                buffer.write_u32(ttl)?;
+                buffer.write_u16(16)?;
 
                 for octet in &addr.segments() {
-                    try!(buffer.write_u16(*octet));
+                    buffer.write_u16(*octet)?;
                 }
             },
             DnsRecord::NS { ref domain, ref host, ttl: TransientTtl(ttl) } => {
-                try!(buffer.write_qname(domain));
-                try!(buffer.write_u16(QueryType::NS.to_num()));
-                try!(buffer.write_u16(1));
-                try!(buffer.write_u32(ttl));
+                buffer.write_qname(domain)?;
+                buffer.write_u16(QueryType::NS.to_num())?;
+                buffer.write_u16(1)?;
+                buffer.write_u32(ttl)?;
 
                 let pos = buffer.pos();
-                try!(buffer.write_u16(0));
+                buffer.write_u16(0)?;
 
-                try!(buffer.write_qname(host));
+                buffer.write_qname(host)?;
 
                 let size = buffer.pos() - (pos + 2);
-                try!(buffer.set_u16(pos, size as u16));
+                buffer.set_u16(pos, size as u16)?;
             },
             DnsRecord::CNAME { ref domain, ref host, ttl: TransientTtl(ttl) } => {
-                try!(buffer.write_qname(domain));
-                try!(buffer.write_u16(QueryType::CNAME.to_num()));
-                try!(buffer.write_u16(1));
-                try!(buffer.write_u32(ttl));
+                buffer.write_qname(domain)?;
+                buffer.write_u16(QueryType::CNAME.to_num())?;
+                buffer.write_u16(1)?;
+                buffer.write_u32(ttl)?;
 
                 let pos = buffer.pos();
-                try!(buffer.write_u16(0));
+                buffer.write_u16(0)?;
 
-                try!(buffer.write_qname(host));
+                buffer.write_qname(host)?;
 
                 let size = buffer.pos() - (pos + 2);
-                try!(buffer.set_u16(pos, size as u16));
+                buffer.set_u16(pos, size as u16)?;
             },
             DnsRecord::SRV { ref domain, priority, weight, port, ref host, ttl: TransientTtl(ttl) } => {
-                try!(buffer.write_qname(domain));
-                try!(buffer.write_u16(QueryType::SRV.to_num()));
-                try!(buffer.write_u16(1));
-                try!(buffer.write_u32(ttl));
+                buffer.write_qname(domain)?;
+                buffer.write_u16(QueryType::SRV.to_num())?;
+                buffer.write_u16(1)?;
+                buffer.write_u32(ttl)?;
 
                 let pos = buffer.pos();
-                try!(buffer.write_u16(0));
+                buffer.write_u16(0)?;
 
-                try!(buffer.write_u16(priority));
-                try!(buffer.write_u16(weight));
-                try!(buffer.write_u16(port));
-                try!(buffer.write_qname(host));
+                buffer.write_u16(priority)?;
+                buffer.write_u16(weight)?;
+                buffer.write_u16(port)?;
+                buffer.write_qname(host)?;
 
                 let size = buffer.pos() - (pos + 2);
-                try!(buffer.set_u16(pos, size as u16));
+                buffer.set_u16(pos, size as u16)?;
             },
             DnsRecord::MX { ref domain, priority, ref host, ttl: TransientTtl(ttl) } => {
-                try!(buffer.write_qname(domain));
-                try!(buffer.write_u16(QueryType::MX.to_num()));
-                try!(buffer.write_u16(1));
-                try!(buffer.write_u32(ttl));
+                buffer.write_qname(domain)?;
+                buffer.write_u16(QueryType::MX.to_num())?;
+                buffer.write_u16(1)?;
+                buffer.write_u32(ttl)?;
 
                 let pos = buffer.pos();
-                try!(buffer.write_u16(0));
+                buffer.write_u16(0)?;
 
-                try!(buffer.write_u16(priority));
-                try!(buffer.write_qname(host));
+                buffer.write_u16(priority)?;
+                buffer.write_qname(host)?;
 
                 let size = buffer.pos() - (pos + 2);
-                try!(buffer.set_u16(pos, size as u16));
+                buffer.set_u16(pos, size as u16)?;
             },
             DnsRecord::SOA {
                 ref domain,
@@ -417,34 +417,34 @@ impl DnsRecord {
                 ttl: TransientTtl(ttl)
             } => {
 
-                try!(buffer.write_qname(domain));
-                try!(buffer.write_u16(QueryType::SOA.to_num()));
-                try!(buffer.write_u16(1));
-                try!(buffer.write_u32(ttl));
+                buffer.write_qname(domain)?;
+                buffer.write_u16(QueryType::SOA.to_num())?;
+                buffer.write_u16(1)?;
+                buffer.write_u32(ttl)?;
 
                 let pos = buffer.pos();
-                try!(buffer.write_u16(0));
+                buffer.write_u16(0)?;
 
-                try!(buffer.write_qname(m_name));
-                try!(buffer.write_qname(r_name));
-                try!(buffer.write_u32(serial));
-                try!(buffer.write_u32(refresh));
-                try!(buffer.write_u32(retry));
-                try!(buffer.write_u32(expire));
-                try!(buffer.write_u32(minimum));
+                buffer.write_qname(m_name)?;
+                buffer.write_qname(r_name)?;
+                buffer.write_u32(serial)?;
+                buffer.write_u32(refresh)?;
+                buffer.write_u32(retry)?;
+                buffer.write_u32(expire)?;
+                buffer.write_u32(minimum)?;
 
                 let size = buffer.pos() - (pos + 2);
-                try!(buffer.set_u16(pos, size as u16));
+                buffer.set_u16(pos, size as u16)?;
             },
             DnsRecord::TXT { ref domain, ref data, ttl: TransientTtl(ttl) } => {
-                try!(buffer.write_qname(domain));
-                try!(buffer.write_u16(QueryType::TXT.to_num()));
-                try!(buffer.write_u16(1));
-                try!(buffer.write_u32(ttl));
-                try!(buffer.write_u16(data.len() as u16));
+                buffer.write_qname(domain)?;
+                buffer.write_u16(QueryType::TXT.to_num())?;
+                buffer.write_u16(1)?;
+                buffer.write_u32(ttl)?;
+                buffer.write_u16(data.len() as u16)?;
 
                 for b in data.as_bytes() {
-                    try!(buffer.write_u8(*b));
+                    buffer.write_u8(*b)?;
                 }
             },
             DnsRecord::OPT { .. } => {
@@ -579,24 +579,24 @@ impl DnsHeader {
     }
 
     pub fn write<T: PacketBuffer>(&self, buffer: &mut T) -> Result<()> {
-        try!(buffer.write_u16(self.id));
+        buffer.write_u16(self.id)?;
 
-        try!(buffer.write_u8( ((self.recursion_desired as u8)) |
+        buffer.write_u8( ((self.recursion_desired as u8)) |
                               ((self.truncated_message as u8) << 1) |
                               ((self.authoritative_answer as u8) << 2) |
                               (self.opcode << 3) |
-                              ((self.response as u8) << 7) as u8) );
+                              ((self.response as u8) << 7) as u8) ?;
 
-        try!(buffer.write_u8( (self.rescode.clone() as u8) |
+        buffer.write_u8( (self.rescode.clone() as u8) |
                               ((self.checking_disabled as u8) << 4) |
                               ((self.authed_data as u8) << 5) |
                               ((self.z as u8) << 6) |
-                              ((self.recursion_available as u8) << 7) ));
+                              ((self.recursion_available as u8) << 7) )?;
 
-        try!(buffer.write_u16(self.questions));
-        try!(buffer.write_u16(self.answers));
-        try!(buffer.write_u16(self.authoritative_entries));
-        try!(buffer.write_u16(self.resource_entries));
+        buffer.write_u16(self.questions)?;
+        buffer.write_u16(self.answers)?;
+        buffer.write_u16(self.authoritative_entries)?;
+        buffer.write_u16(self.resource_entries)?;
 
         Ok(())
     }
@@ -607,9 +607,9 @@ impl DnsHeader {
 
     #[allow(identity_op)]
     pub fn read<T: PacketBuffer>(&mut self, buffer: &mut T) -> Result<()> {
-        self.id = try!(buffer.read_u16());
+        self.id = buffer.read_u16()?;
 
-        let flags = try!(buffer.read_u16());
+        let flags = buffer.read_u16()?;
         let a = (flags >> 8) as u8;
         let b = (flags & 0xFF) as u8;
         self.recursion_desired = (a & (1 << 0)) > 0;
@@ -624,10 +624,10 @@ impl DnsHeader {
         self.z = (b & (1 << 6)) > 0;
         self.recursion_available = (b & (1 << 7)) > 0;
 
-        self.questions = try!(buffer.read_u16());
-        self.answers = try!(buffer.read_u16());
-        self.authoritative_entries = try!(buffer.read_u16());
-        self.resource_entries = try!(buffer.read_u16());
+        self.questions = buffer.read_u16()?;
+        self.answers = buffer.read_u16()?;
+        self.authoritative_entries = buffer.read_u16()?;
+        self.resource_entries = buffer.read_u16()?;
 
         // Return the constant header size
         Ok(())
@@ -636,25 +636,25 @@ impl DnsHeader {
 
 impl fmt::Display for DnsHeader {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        try!(write!(f, "DnsHeader:\n"));
-        try!(write!(f, "\tid: {0}\n", self.id));
+        write!(f, "DnsHeader:\n")?;
+        write!(f, "\tid: {0}\n", self.id)?;
 
-        try!(write!(f, "\trecursion_desired: {0}\n", self.recursion_desired));
-        try!(write!(f, "\ttruncated_message: {0}\n", self.truncated_message));
-        try!(write!(f, "\tauthoritative_answer: {0}\n", self.authoritative_answer));
-        try!(write!(f, "\topcode: {0}\n", self.opcode));
-        try!(write!(f, "\tresponse: {0}\n", self.response));
+        write!(f, "\trecursion_desired: {0}\n", self.recursion_desired)?;
+        write!(f, "\ttruncated_message: {0}\n", self.truncated_message)?;
+        write!(f, "\tauthoritative_answer: {0}\n", self.authoritative_answer)?;
+        write!(f, "\topcode: {0}\n", self.opcode)?;
+        write!(f, "\tresponse: {0}\n", self.response)?;
 
-        try!(write!(f, "\trescode: {:?}\n", self.rescode));
-        try!(write!(f, "\tchecking_disabled: {0}\n", self.checking_disabled));
-        try!(write!(f, "\tauthed_data: {0}\n", self.authed_data));
-        try!(write!(f, "\tz: {0}\n", self.z));
-        try!(write!(f, "\trecursion_available: {0}\n", self.recursion_available));
+        write!(f, "\trescode: {:?}\n", self.rescode)?;
+        write!(f, "\tchecking_disabled: {0}\n", self.checking_disabled)?;
+        write!(f, "\tauthed_data: {0}\n", self.authed_data)?;
+        write!(f, "\tz: {0}\n", self.z)?;
+        write!(f, "\trecursion_available: {0}\n", self.recursion_available)?;
 
-        try!(write!(f, "\tquestions: {0}\n", self.questions));
-        try!(write!(f, "\tanswers: {0}\n", self.answers));
-        try!(write!(f, "\tauthoritative_entries: {0}\n", self.authoritative_entries));
-        try!(write!(f, "\tresource_entries: {0}\n", self.resource_entries));
+        write!(f, "\tquestions: {0}\n", self.questions)?;
+        write!(f, "\tanswers: {0}\n", self.answers)?;
+        write!(f, "\tauthoritative_entries: {0}\n", self.authoritative_entries)?;
+        write!(f, "\tresource_entries: {0}\n", self.resource_entries)?;
 
         Ok(())
     }
@@ -681,19 +681,19 @@ impl DnsQuestion {
 
     pub fn write<T: PacketBuffer>(&self, buffer: &mut T) -> Result<()> {
 
-        try!(buffer.write_qname(&self.name));
+        buffer.write_qname(&self.name)?;
 
         let typenum = self.qtype.to_num();
-        try!(buffer.write_u16(typenum));
-        try!(buffer.write_u16(1));
+        buffer.write_u16(typenum)?;
+        buffer.write_u16(1)?;
 
         Ok(())
     }
 
     pub fn read<T: PacketBuffer>(&mut self, buffer: &mut T) -> Result<()> {
-        try!(buffer.read_qname(&mut self.name));
-        self.qtype = QueryType::from_num(try!(buffer.read_u16())); // qtype
-        let _ = try!(buffer.read_u16()); // class
+        buffer.read_qname(&mut self.name)?;
+        self.qtype = QueryType::from_num(buffer.read_u16()?); // qtype
+        let _ = buffer.read_u16()?; // class
 
         Ok(())
     }
@@ -701,9 +701,9 @@ impl DnsQuestion {
 
 impl fmt::Display for DnsQuestion {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        try!(write!(f, "DnsQuestion:\n"));
-        try!(write!(f, "\tname: {0}\n", self.name));
-        try!(write!(f, "\trecord type: {:?}\n", self.qtype));
+        write!(f, "DnsQuestion:\n")?;
+        write!(f, "\tname: {0}\n", self.name)?;
+        write!(f, "\trecord type: {:?}\n", self.qtype)?;
 
         Ok(())
     }
@@ -736,25 +736,25 @@ impl DnsPacket {
 
     pub fn from_buffer<T: PacketBuffer>(buffer: &mut T) -> Result<DnsPacket> {
         let mut result = DnsPacket::new();
-        try!(result.header.read(buffer));
+        result.header.read(buffer)?;
 
         for _ in 0..result.header.questions {
             let mut question = DnsQuestion::new("".to_string(),
                                                 QueryType::UNKNOWN(0));
-            try!(question.read(buffer));
+            question.read(buffer)?;
             result.questions.push(question);
         }
 
         for _ in 0..result.header.answers {
-            let rec = try!(DnsRecord::read(buffer));
+            let rec = DnsRecord::read(buffer)?;
             result.answers.push(rec);
         }
         for _ in 0..result.header.authoritative_entries {
-            let rec = try!(DnsRecord::read(buffer));
+            let rec = DnsRecord::read(buffer)?;
             result.authorities.push(rec);
         }
         for _ in 0..result.header.resource_entries {
-            let rec = try!(DnsRecord::read(buffer));
+            let rec = DnsRecord::read(buffer)?;
             result.resources.push(rec);
         }
 
@@ -899,13 +899,13 @@ impl DnsPacket {
         let mut size = self.header.binary_len();
         for ref question in &self.questions {
             size += question.binary_len();
-            try!(question.write(&mut test_buffer));
+            question.write(&mut test_buffer)?;
         }
 
         let mut record_count = self.answers.len() + self.authorities.len() + self.resources.len();
 
         for (i, rec) in self.answers.iter().chain(self.authorities.iter()).chain(self.resources.iter()).enumerate() {
-            size += try!(rec.write(&mut test_buffer));
+            size += rec.write(&mut test_buffer)?;
             if size > max_size {
                 record_count = i;
                 self.header.truncated_message = true;
@@ -921,14 +921,14 @@ impl DnsPacket {
 
         self.header.questions = self.questions.len() as u16;
 
-        try!(self.header.write(buffer));
+        self.header.write(buffer)?;
 
         for question in &self.questions {
-            try!(question.write(buffer));
+            question.write(buffer)?;
         }
 
         for rec in self.answers.iter().chain(self.authorities.iter()).chain(self.resources.iter()).take(record_count) {
-            try!(rec.write(buffer));
+            rec.write(buffer)?;
         }
 
         Ok(())

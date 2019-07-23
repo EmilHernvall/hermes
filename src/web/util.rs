@@ -48,7 +48,7 @@ pub fn url_decode(instr: &str) -> String {
 pub fn parse_formdata<R: Read>(reader: &mut R) -> Result<Vec<(String, String)>> {
 
     let mut data = String::new();
-    try!(reader.read_to_string(&mut data));
+    reader.read_to_string(&mut data)?;
 
     let res = data.split('&').filter_map(|x| {
         let s = x.split('=').collect::<Vec<&str>>();

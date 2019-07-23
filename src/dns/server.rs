@@ -181,7 +181,7 @@ impl DnsServer for DnsUdpServer {
     fn run_server(self) -> Result<()> {
 
         // Bind the socket
-        let socket = try!(UdpSocket::bind(("0.0.0.0", self.context.dns_port)));
+        let socket = UdpSocket::bind(("0.0.0.0", self.context.dns_port))?;
 
         // Spawn threads for handling requests
         for thread_id in 0..self.thread_count {
@@ -198,7 +198,7 @@ impl DnsServer for DnsUdpServer {
             let request_queue = self.request_queue.clone();
 
             let name = "DnsUdpServer-request-".to_string() + &thread_id.to_string();
-            let _ = try!(Builder::new().name(name).spawn(move || {
+            let _ = Builder::new().name(name).spawn(move || {
                 loop {
 
                     // Acquire lock, and wait on the condition until data is
@@ -235,11 +235,11 @@ impl DnsServer for DnsUdpServer {
                     let data = return_or_report!(res_buffer.get_range(0, len), "Failed to get buffer data");
                     ignore_or_report!(socket_clone.send_to(data, src), "Failed to send response packet");
                 }
-            }));
+            })?;
         }
 
         // Start servicing requests
-        let _ = try!(Builder::new().name("DnsUdpServer-incoming".into()).spawn(move || {
+        let _ = Builder::new().name("DnsUdpServer-incoming".into()).spawn(move || {
             loop {
                 let _ = self.context.statistics.udp_query_count.fetch_add(1, Ordering::Release);
 
@@ -274,7 +274,7 @@ impl DnsServer for DnsUdpServer {
                     }
                 }
             }
-        }));
+        })?;
 
         Ok(())
     }
@@ -299,7 +299,7 @@ impl DnsTcpServer {
 
 impl DnsServer for DnsTcpServer {
     fn run_server(mut self) -> Result<()> {
-        let socket = try!(TcpListener::bind(("0.0.0.0", self.context.dns_port)));
+        let socket = TcpListener::bind(("0.0.0.0", self.context.dns_port))?;
 
         // Spawn threads for handling requests, and create the channels
         for thread_id in 0..self.thread_count {
@@ -309,7 +309,7 @@ impl DnsServer for DnsTcpServer {
             let context = self.context.clone();
 
             let name = "DnsTcpServer-request-".to_string() + &thread_id.to_string();
-            let _ = try!(Builder::new().name(name).spawn(move || {
+            let _ = Builder::new().name(name).spawn(move || {
                 loop {
                     let mut stream = match rx.recv() {
                         Ok(x) => x,
@@ -345,10 +345,10 @@ impl DnsServer for DnsTcpServer {
 
                     ignore_or_report!(stream.shutdown(Shutdown::Both), "Failed to shutdown socket");
                 }
-            }));
+            })?;
         }
 
-        let _ = try!(Builder::new().name("DnsTcpServer-incoming".into()).spawn(move || {
+        let _ = Builder::new().name("DnsTcpServer-incoming".into()).spawn(move || {
             for wrap_stream in socket.incoming() {
                 let stream = match wrap_stream {
                     Ok(stream) => stream,
@@ -367,7 +367,7 @@ impl DnsServer for DnsTcpServer {
                     }
                 }
             }
-        }));
+        })?;
 
         Ok(())
     }
