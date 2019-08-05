@@ -1,15 +1,15 @@
 //! contains the data store for local zones
 
-use std::collections::{BTreeMap,BTreeSet};
-use std::sync::{RwLock, LockResult, RwLockReadGuard, RwLockWriteGuard};
-use std::io::{Write,Result,Error,ErrorKind};
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs::File;
+use std::io::{Error, ErrorKind, Result, Write};
 use std::path::Path;
+use std::sync::{LockResult, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
-use dns::buffer::{VectorPacketBuffer, PacketBuffer, StreamPacketBuffer};
-use dns::protocol::{DnsPacket,DnsRecord,QueryType,ResultCode,TransientTtl};
+use crate::dns::buffer::{PacketBuffer, StreamPacketBuffer, VectorPacketBuffer};
+use crate::dns::protocol::{DnsPacket, DnsRecord, QueryType, ResultCode, TransientTtl};
 
-#[derive(Clone,Debug,Default)]
+#[derive(Clone, Debug, Default)]
 pub struct Zone {
     pub domain: String,
     pub m_name: String,
@@ -19,7 +19,7 @@ pub struct Zone {
     pub retry: u32,
     pub expire: u32,
     pub minimum: u32,
-    pub records: BTreeSet<DnsRecord>
+    pub records: BTreeSet<DnsRecord>,
 }
 
 impl Zone {
@@ -33,7 +33,7 @@ impl Zone {
             retry: 0,
             expire: 0,
             minimum: 0,
-            records: BTreeSet::new()
+            records: BTreeSet::new(),
         }
     }
 
@@ -48,46 +48,46 @@ impl Zone {
 
 #[derive(Default)]
 pub struct Zones {
-    zones: BTreeMap<String, Zone>
+    zones: BTreeMap<String, Zone>,
 }
 
 impl<'a> Zones {
     pub fn new() -> Zones {
         Zones {
-            zones: BTreeMap::new()
+            zones: BTreeMap::new(),
         }
     }
 
     pub fn load(&mut self) -> Result<()> {
-        let zones_dir = try!(Path::new("zones").read_dir());
+        let zones_dir = Path::new("zones").read_dir()?;
 
         for wrapped_filename in zones_dir {
             let filename = match wrapped_filename {
                 Ok(x) => x,
-                Err(_) => continue
+                Err(_) => continue,
             };
 
             let mut zone_file = match File::open(filename.path()) {
                 Ok(x) => x,
-                Err(_) => continue
+                Err(_) => continue,
             };
 
             let mut buffer = StreamPacketBuffer::new(&mut zone_file);
 
             let mut zone = Zone::new(String::new(), String::new(), String::new());
-            try!(buffer.read_qname(&mut zone.domain));
-            try!(buffer.read_qname(&mut zone.m_name));
-            try!(buffer.read_qname(&mut zone.r_name));
-            zone.serial = try!(buffer.read_u32());
-            zone.refresh = try!(buffer.read_u32());
-            zone.retry = try!(buffer.read_u32());
-            zone.expire = try!(buffer.read_u32());
-            zone.minimum = try!(buffer.read_u32());
+            buffer.read_qname(&mut zone.domain)?;
+            buffer.read_qname(&mut zone.m_name)?;
+            buffer.read_qname(&mut zone.r_name)?;
+            zone.serial = buffer.read_u32()?;
+            zone.refresh = buffer.read_u32()?;
+            zone.retry = buffer.read_u32()?;
+            zone.expire = buffer.read_u32()?;
+            zone.minimum = buffer.read_u32()?;
 
-            let record_count = try!(buffer.read_u32());
+            let record_count = buffer.read_u32()?;
 
             for _ in 0..record_count {
-                let rr = try!(DnsRecord::read(&mut buffer));
+                let rr = DnsRecord::read(&mut buffer)?;
                 zone.add_record(&rr);
             }
 
@@ -132,56 +132,50 @@ impl<'a> Zones {
         Ok(())
     }
 
-    pub fn zones(&self) -> Vec<&Zone>
-    {
+    pub fn zones(&self) -> Vec<&Zone> {
         self.zones.values().collect()
     }
 
-    pub fn add_zone(&mut self, zone: Zone)
-    {
+    pub fn add_zone(&mut self, zone: Zone) {
         self.zones.insert(zone.domain.clone(), zone);
     }
 
-    pub fn get_zone(&'a self, domain: &str) -> Option<&'a Zone>
-    {
+    pub fn get_zone(&'a self, domain: &str) -> Option<&'a Zone> {
         self.zones.get(domain)
     }
 
-    pub fn get_zone_mut(&'a mut self, domain: &str) -> Option<&'a mut Zone>
-    {
+    pub fn get_zone_mut(&'a mut self, domain: &str) -> Option<&'a mut Zone> {
         self.zones.get_mut(domain)
     }
 }
 
 #[derive(Default)]
 pub struct Authority {
-    zones: RwLock<Zones>
+    zones: RwLock<Zones>,
 }
 
 impl Authority {
     pub fn new() -> Authority {
         Authority {
-            zones: RwLock::new(Zones::new())
+            zones: RwLock::new(Zones::new()),
         }
     }
 
-    pub fn load(&self) -> Result<()>
-    {
+    pub fn load(&self) -> Result<()> {
         let mut zones = match self.zones.write() {
             Ok(x) => x,
-            Err(_) => return Err(Error::new(ErrorKind::Other, "Failed to acquire lock"))
+            Err(_) => return Err(Error::new(ErrorKind::Other, "Failed to acquire lock")),
         };
 
-        try!(zones.load());
+        zones.load()?;
 
         Ok(())
     }
 
-    pub fn query(&self, qname: &str, qtype: QueryType) -> Option<DnsPacket>
-    {
+    pub fn query(&self, qname: &str, qtype: QueryType) -> Option<DnsPacket> {
         let zones = match self.zones.read().ok() {
             Some(x) => x,
-            None => return None
+            None => return None,
         };
 
         let mut best_match = None;
@@ -194,15 +188,14 @@ impl Authority {
                 if len < zone.domain.len() {
                     best_match = Some((zone.domain.len(), zone));
                 }
-            }
-            else {
+            } else {
                 best_match = Some((zone.domain.len(), zone));
             }
         }
 
         let zone = match best_match {
             Some((_, zone)) => zone,
-            None => return None
+            None => return None,
         };
 
         let mut packet = DnsPacket::new();
@@ -211,7 +204,7 @@ impl Authority {
         for rec in &zone.records {
             let domain = match rec.get_domain() {
                 Some(x) => x,
-                None => continue
+                None => continue,
             };
 
             if &domain != qname {
@@ -219,12 +212,9 @@ impl Authority {
             }
 
             let rtype = rec.get_querytype();
-            if qtype == rtype || (qtype == QueryType::A &&
-                                  rtype == QueryType::CNAME) {
-
+            if qtype == rtype || (qtype == QueryType::A && rtype == QueryType::CNAME) {
                 packet.answers.push(rec.clone());
             }
-
         }
 
         if packet.answers.is_empty() {
@@ -239,21 +229,18 @@ impl Authority {
                 retry: zone.retry,
                 expire: zone.expire,
                 minimum: zone.minimum,
-                ttl: TransientTtl(zone.minimum)
+                ttl: TransientTtl(zone.minimum),
             });
         }
 
         Some(packet)
     }
 
-    pub fn read(&self) -> LockResult<RwLockReadGuard<Zones>>
-    {
+    pub fn read(&self) -> LockResult<RwLockReadGuard<'_, Zones>> {
         self.zones.read()
     }
 
-    pub fn write(&self) -> LockResult<RwLockWriteGuard<Zones>>
-    {
+    pub fn write(&self) -> LockResult<RwLockWriteGuard<'_, Zones>> {
         self.zones.write()
     }
 }
-

@@ -1,25 +1,24 @@
-use std::io::Result;
 use std::collections::BTreeMap;
+use std::io::Result;
 use std::sync::Arc;
 
-use regex::{Regex,Captures};
-use tiny_http::{Response, Header, Request};
+use regex::{Captures, Regex};
+use tiny_http::{Header, Request, Response};
 //use chrono::*;
-use rustc_serialize::json::{self, ToJson, Json};
+use rustc_serialize::json::{self, Json, ToJson};
 
-use dns::context::ServerContext;
-use dns::cache::RecordSet;
+use crate::dns::cache::RecordSet;
+use crate::dns::context::ServerContext;
 
-use web::util::rr_to_json;
-use web::server::{Action,WebServer};
+use crate::web::server::{Action, WebServer};
+use crate::web::util::rr_to_json;
 
 #[derive(RustcEncodable)]
-pub struct CacheRecord
-{
+pub struct CacheRecord {
     domain: String,
     hits: u32,
     updates: u32,
-    entries: Vec<Json>
+    entries: Vec<Json>,
 }
 
 impl ToJson for CacheRecord {
@@ -34,10 +33,9 @@ impl ToJson for CacheRecord {
 }
 
 #[derive(RustcEncodable)]
-pub struct CacheResponse
-{
+pub struct CacheResponse {
     ok: bool,
-    records: Vec<CacheRecord>
+    records: Vec<CacheRecord>,
 }
 
 impl ToJson for CacheResponse {
@@ -50,51 +48,52 @@ impl ToJson for CacheResponse {
 }
 
 pub struct CacheAction {
-    context: Arc<ServerContext>
+    context: Arc<ServerContext>,
 }
 
 impl CacheAction {
     pub fn new(context: Arc<ServerContext>) -> CacheAction {
-        CacheAction {
-            context: context
-        }
+        CacheAction { context: context }
     }
 }
 
 impl Action for CacheAction {
-
-    #[allow(trivial_regex)]
     fn get_regex(&self) -> Regex {
         Regex::new(r"^/cache").unwrap()
     }
 
     fn initialize(&self, server: &mut WebServer) {
         let tpl_data = include_str!("templates/cache.html").to_string();
-        if !server.handlebars.register_template_string("cache", tpl_data).is_ok() {
+        if !server
+            .handlebars
+            .register_template_string("cache", tpl_data)
+            .is_ok()
+        {
             println!("Failed to register cache template");
             return;
         }
     }
 
-    fn handle(&self,
-              server: &WebServer,
-              request: Request,
-              _: &Captures,
-              _: bool,
-              json_output: bool) -> Result<()> {
-
+    fn handle(
+        &self,
+        server: &WebServer,
+        request: Request,
+        _: &Captures<'_>,
+        _: bool,
+        json_output: bool,
+    ) -> Result<()> {
         //let start_of_eq = Local::now();
 
         let cached_records = match self.context.cache.list() {
             Ok(x) => x,
-            Err(_) => Vec::new()
+            Err(_) => Vec::new(),
         };
 
         //let end_of_list = Local::now();
 
         let mut cache_response = CacheResponse {
             ok: true,
-            records: Vec::new()
+            records: Vec::new(),
         };
 
         let mut id = 0;
@@ -103,13 +102,12 @@ impl Action for CacheAction {
                 domain: rs.domain.clone(),
                 hits: rs.hits,
                 updates: rs.updates,
-                entries: Vec::new()
+                entries: Vec::new(),
             };
 
             for entry in rs.record_types.values() {
-
                 match *entry {
-                    RecordSet::NoRecords { .. } => {},
+                    RecordSet::NoRecords { .. } => {}
                     RecordSet::Records { ref records, .. } => {
                         for entry in records {
                             cache_record.entries.push(rr_to_json(id, &entry.record));
@@ -127,7 +125,7 @@ impl Action for CacheAction {
         if json_output {
             let output = match json::encode(&cache_response).ok() {
                 Some(x) => x,
-                None => return server.error_response(request, "Failed to encode response")
+                None => return server.error_response(request, "Failed to encode response"),
             };
 
             //let end_of_output = Local::now();
@@ -136,15 +134,15 @@ impl Action for CacheAction {
             //println!("output: {:?}", (end_of_output-end_of_object).num_milliseconds());
 
             let mut response = Response::from_string(output);
-            response.add_header(Header{
+            response.add_header(Header {
                 field: "Content-Type".parse().unwrap(),
-                value: "application/json".parse().unwrap()
+                value: "application/json".parse().unwrap(),
             });
             request.respond(response)
         } else {
             let html_data = match server.handlebars.render("cache", &cache_response).ok() {
                 Some(x) => x,
-                None => return server.error_response(request, "Failed to encode response")
+                None => return server.error_response(request, "Failed to encode response"),
             };
 
             //let end_of_output = Local::now();
@@ -153,9 +151,9 @@ impl Action for CacheAction {
             //println!("output: {:?}", (end_of_output-end_of_object).num_milliseconds());
 
             let mut response = Response::from_string(html_data);
-            response.add_header(Header{
+            response.add_header(Header {
                 field: "Content-Type".parse().unwrap(),
-                value: "text/html".parse().unwrap()
+                value: "text/html".parse().unwrap(),
             });
             request.respond(response)
         }
