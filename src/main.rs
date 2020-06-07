@@ -39,6 +39,12 @@ fn main() {
         "forward replies to specified dns server",
         "SERVER",
     );
+    opts.optopt(
+        "p",
+        "port",
+        "listen on specified port",
+        "PORT",
+    );
 
     let opt_matches = match opts.parse(&args[1..]) {
         Ok(m) => m,
@@ -78,6 +84,21 @@ fn main() {
             ctx.allow_recursive = false;
         }
 
+        if opt_matches.opt_present("p") {
+            match opt_matches
+                .opt_str("p")
+                .and_then(|x| x.parse::<u16>().ok())
+            {
+                Some(port) => {
+                    ctx.dns_port = port;
+                }
+                None => {
+                    println!("Port parameter must be a valid port");
+                    return;
+                }
+            }
+        }
+
         match ctx.initialize() {
             Ok(_) => {}
             Err(e) => {
@@ -91,9 +112,7 @@ fn main() {
         }
     }
 
-    let port = 53;
-
-    println!("Listening on port {}", port);
+    println!("Listening on port {}", context.dns_port);
 
     // Start DNS servers
     if context.enable_udp {
