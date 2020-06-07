@@ -1,6 +1,8 @@
 Hermes DNS server
 =================
 
+![Rust](https://github.com/EmilHernvall/hermes/workflows/Rust/badge.svg)
+
 Hermes is a compact DNS server in safe rust. It provides:
 
  * Quick and easy configuration through a few select command line parameters.
