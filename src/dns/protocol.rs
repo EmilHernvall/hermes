@@ -4,12 +4,20 @@
 use std::cmp::Ordering;
 use std::fmt;
 use std::hash::{Hash, Hasher};
-use std::io::Result;
 use std::net::{Ipv4Addr, Ipv6Addr};
 
+use derive_more::{Display, From, Error};
 use rand::random;
 
 use crate::dns::buffer::{PacketBuffer, VectorPacketBuffer};
+
+#[derive(Debug, Display, From, Error)]
+pub enum ProtocolError {
+    Buffer(crate::dns::buffer::BufferError),
+    Io(std::io::Error),
+}
+
+type Result<T> = std::result::Result<T, ProtocolError>;
 
 /// `QueryType` represents the requested Record Type of a query
 ///

@@ -1,6 +1,6 @@
 //! client for sending DNS queries to other servers
 
-use std::io::{Error, ErrorKind, Result, Write};
+use std::io::Write;
 use std::marker::{Send, Sync};
 use std::net::{TcpStream, UdpSocket};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -10,10 +10,22 @@ use std::thread::{sleep, Builder};
 use std::time::Duration as SleepDuration;
 
 use chrono::*;
+use derive_more::{Display, From, Error};
 
 use crate::dns::buffer::{BytePacketBuffer, PacketBuffer, StreamPacketBuffer};
 use crate::dns::netutil::{read_packet_length, write_packet_length};
 use crate::dns::protocol::{DnsPacket, DnsQuestion, QueryType};
+
+#[derive(Debug, Display, From, Error)]
+pub enum ClientError {
+    Protocol(crate::dns::protocol::ProtocolError),
+    Io(std::io::Error),
+    PoisonedLock,
+    LookupFailed,
+    TimeOut,
+}
+
+type Result<T> = std::result::Result<T, ClientError>;
 
 pub trait DnsClient {
     fn get_sent_count(&self) -> usize;
@@ -112,7 +124,9 @@ impl DnsNetworkClient {
         let _ = read_packet_length(&mut socket)?;
 
         let mut stream_buffer = StreamPacketBuffer::new(&mut socket);
-        DnsPacket::from_buffer(&mut stream_buffer)
+        let packet = DnsPacket::from_buffer(&mut stream_buffer)?;
+
+        Ok(packet)
     }
 
     /// Send a DNS query using UDP transport
@@ -149,15 +163,16 @@ impl DnsNetworkClient {
         // Create a return channel, and add a `PendingQuery` to the list of lookups
         // in progress
         let (tx, rx) = channel();
-        match self.pending_queries.lock() {
-            Ok(mut pending_queries) => {
-                pending_queries.push(PendingQuery {
-                    seq: packet.header.id,
-                    timestamp: Local::now(),
-                    tx: tx,
-                });
-            }
-            Err(_) => return Err(Error::new(ErrorKind::Other, "Failed to acquire lock")),
+        {
+            let mut pending_queries = self
+                .pending_queries
+                .lock()
+                .map_err(|_| ClientError::PoisonedLock)?;
+            pending_queries.push(PendingQuery {
+                seq: packet.header.id,
+                timestamp: Local::now(),
+                tx: tx,
+            });
         }
 
         // Send query
@@ -167,19 +182,17 @@ impl DnsNetworkClient {
             .send_to(&req_buffer.buf[0..req_buffer.pos], server)?;
 
         // Wait for response
-        if let Ok(res) = rx.recv() {
-            match res {
-                Some(qr) => return Ok(qr),
-                None => {
-                    let _ = self.total_failed.fetch_add(1, Ordering::Release);
-                    return Err(Error::new(ErrorKind::TimedOut, "Request timed out"));
-                }
+        match rx.recv() {
+            Ok(Some(qr)) => Ok(qr),
+            Ok(None) => {
+                let _ = self.total_failed.fetch_add(1, Ordering::Release);
+                Err(ClientError::TimeOut)
+            }
+            Err(_) => {
+                let _ = self.total_failed.fetch_add(1, Ordering::Release);
+                Err(ClientError::LookupFailed)
             }
         }
-
-        // Otherwise, fail
-        let _ = self.total_failed.fetch_add(1, Ordering::Release);
-        Err(Error::new(ErrorKind::InvalidInput, "Lookup failed"))
     }
 }
 

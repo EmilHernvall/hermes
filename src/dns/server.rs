@@ -1,7 +1,7 @@
 //! UDP and TCP server implementations for DNS
 
 use std::collections::VecDeque;
-use std::io::{Result, Write};
+use std::io::Write;
 use std::net::SocketAddr;
 use std::net::{Shutdown, TcpListener, TcpStream, UdpSocket};
 use std::sync::atomic::Ordering;
@@ -9,6 +9,7 @@ use std::sync::mpsc::{channel, Sender};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::Builder;
 
+use derive_more::{Display, From, Error};
 use rand::random;
 
 use crate::dns::buffer::{BytePacketBuffer, PacketBuffer, StreamPacketBuffer, VectorPacketBuffer};
@@ -16,6 +17,13 @@ use crate::dns::context::ServerContext;
 use crate::dns::netutil::{read_packet_length, write_packet_length};
 use crate::dns::protocol::{DnsPacket, DnsRecord, QueryType, ResultCode};
 use crate::dns::resolve::DnsResolver;
+
+#[derive(Debug, Display, From, Error)]
+pub enum ServerError {
+    Io(std::io::Error),
+}
+
+type Result<T> = std::result::Result<T, ServerError>;
 
 macro_rules! return_or_report {
     ( $x:expr, $message:expr ) => {

@@ -1,21 +1,18 @@
 //! hermes documentation
 
-pub mod dns;
-pub mod web;
-
 use std::env;
 use std::net::Ipv4Addr;
 use std::sync::Arc;
 
 use getopts::Options;
 
-use crate::dns::context::{ResolveStrategy, ServerContext};
-use crate::dns::protocol::{DnsRecord, TransientTtl};
-use crate::dns::server::{DnsServer, DnsTcpServer, DnsUdpServer};
-use crate::web::authority::{AuthorityAction, ZoneAction};
-use crate::web::cache::CacheAction;
-use crate::web::index::IndexAction;
-use crate::web::server::WebServer;
+use hermes::dns::context::{ResolveStrategy, ServerContext};
+use hermes::dns::protocol::{DnsRecord, TransientTtl};
+use hermes::dns::server::{DnsServer, DnsTcpServer, DnsUdpServer};
+use hermes::web::authority::{AuthorityAction, ZoneAction};
+use hermes::web::cache::CacheAction;
+use hermes::web::index::IndexAction;
+use hermes::web::server::WebServer;
 
 fn print_usage(program: &str, opts: Options) {
     let brief = format!("Usage: {} [options]", program);
@@ -39,12 +36,7 @@ fn main() {
         "forward replies to specified dns server",
         "SERVER",
     );
-    opts.optopt(
-        "p",
-        "port",
-        "listen on specified port",
-        "PORT",
-    );
+    opts.optopt("p", "port", "listen on specified port", "PORT");
 
     let opt_matches = match opts.parse(&args[1..]) {
         Ok(m) => m,
@@ -85,10 +77,7 @@ fn main() {
         }
 
         if opt_matches.opt_present("p") {
-            match opt_matches
-                .opt_str("p")
-                .and_then(|x| x.parse::<u16>().ok())
-            {
+            match opt_matches.opt_str("p").and_then(|x| x.parse::<u16>().ok()) {
                 Some(port) => {
                     ctx.dns_port = port;
                 }

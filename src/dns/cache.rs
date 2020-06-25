@@ -3,12 +3,20 @@
 use std::clone::Clone;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::hash::{Hash, Hasher};
-use std::io::{Error, ErrorKind, Result};
 use std::sync::{Arc, RwLock};
 
 use chrono::*;
+use derive_more::{Display, From, Error};
 
 use crate::dns::protocol::{DnsPacket, DnsRecord, QueryType, ResultCode};
+
+#[derive(Debug, Display, From, Error)]
+pub enum CacheError {
+    Io(std::io::Error),
+    PoisonedLock,
+}
+
+type Result<T> = std::result::Result<T, CacheError>;
 
 pub enum CacheState {
     PositiveCache,
@@ -271,10 +279,7 @@ impl SynchronizedCache {
     }
 
     pub fn list(&self) -> Result<Vec<Arc<DomainEntry>>> {
-        let cache = match self.cache.read() {
-            Ok(x) => x,
-            Err(_) => return Err(Error::new(ErrorKind::Other, "Failed to acquire lock")),
-        };
+        let cache = self.cache.read().map_err(|_| CacheError::PoisonedLock)?;
 
         let mut list = Vec::new();
 
@@ -295,10 +300,7 @@ impl SynchronizedCache {
     }
 
     pub fn store(&self, records: &[DnsRecord]) -> Result<()> {
-        let mut cache = match self.cache.write() {
-            Ok(x) => x,
-            Err(_) => return Err(Error::new(ErrorKind::Other, "Failed to acquire lock")),
-        };
+        let mut cache = self.cache.write().map_err(|_| CacheError::PoisonedLock)?;
 
         cache.store(records);
 
@@ -306,10 +308,7 @@ impl SynchronizedCache {
     }
 
     pub fn store_nxdomain(&self, qname: &str, qtype: QueryType, ttl: u32) -> Result<()> {
-        let mut cache = match self.cache.write() {
-            Ok(x) => x,
-            Err(_) => return Err(Error::new(ErrorKind::Other, "Failed to acquire lock")),
-        };
+        let mut cache = self.cache.write().map_err(|_| CacheError::PoisonedLock)?;
 
         cache.store_nxdomain(qname, qtype, ttl);
 

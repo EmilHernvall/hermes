@@ -1,13 +1,23 @@
 //! The `ServerContext in this thread holds the common state across the server
 
-use std::io::Result;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+
+use derive_more::{Display, From, Error};
 
 use crate::dns::authority::Authority;
 use crate::dns::cache::SynchronizedCache;
 use crate::dns::client::{DnsClient, DnsNetworkClient};
 use crate::dns::resolve::{DnsResolver, ForwardingDnsResolver, RecursiveDnsResolver};
+
+#[derive(Debug, Display, From, Error)]
+pub enum ContextError {
+    Authority(crate::dns::authority::AuthorityError),
+    Client(crate::dns::client::ClientError),
+    Io(std::io::Error),
+}
+
+type Result<T> = std::result::Result<T, ContextError>;
 
 pub struct ServerStatistics {
     pub tcp_query_count: AtomicUsize,
@@ -120,5 +130,4 @@ pub mod tests {
             },
         })
     }
-
 }

@@ -1,13 +1,23 @@
 //! resolver implementations implementing different strategies for answering
 //! incoming queries
 
-use std::io::Result;
-use std::io::{Error, ErrorKind};
 use std::sync::Arc;
 use std::vec::Vec;
 
+use derive_more::{Display, From, Error};
+
 use crate::dns::context::ServerContext;
 use crate::dns::protocol::{DnsPacket, QueryType, ResultCode};
+
+#[derive(Debug, Display, From, Error)]
+pub enum ResolveError {
+    Client(crate::dns::client::ClientError),
+    Cache(crate::dns::cache::CacheError),
+    Io(std::io::Error),
+    NoServerFound,
+}
+
+type Result<T> = std::result::Result<T, ResolveError>;
 
 pub trait DnsResolver {
     fn get_context(&self) -> Arc<ServerContext>;
@@ -74,13 +84,11 @@ impl DnsResolver for ForwardingDnsResolver {
         let result = self
             .context
             .client
-            .send_query(qname, qtype, (host.as_str(), port), true);
+            .send_query(qname, qtype, (host.as_str(), port), true)?;
 
-        if let Ok(ref qr) = result {
-            let _ = self.context.cache.store(&qr.answers);
-        }
+        self.context.cache.store(&result.answers)?;
 
-        result
+        Ok(result)
     }
 }
 
@@ -128,10 +136,7 @@ impl DnsResolver for RecursiveDnsResolver {
             }
         }
 
-        let mut ns = match tentative_ns {
-            Some(x) => x,
-            None => return Err(Error::new(ErrorKind::NotFound, "No DNS server found")),
-        };
+        let mut ns = tentative_ns.ok_or_else(|| ResolveError::NoServerFound)?;
 
         // Start querying name servers
         loop {

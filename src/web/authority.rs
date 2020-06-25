@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::error::Error as RealError;
 use std::io::{Error, ErrorKind, Result};
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::sync::Arc;
@@ -231,7 +230,7 @@ impl Action for AuthorityAction {
                         Err(e) => {
                             return server.error_response(
                                 request,
-                                &("Failed to encode response: ".to_string() + e.description()),
+                                &format!("Failed to encode response: {}", e),
                             )
                         }
                     };
@@ -255,7 +254,7 @@ impl Action for AuthorityAction {
                         .and_then(ZoneCreateRequest::from_formdata)
                     {
                         Ok(x) => x,
-                        Err(e) => return server.error_response(request, e.description()),
+                        Err(e) => return server.error_response(request, &e.to_string()),
                     }
                 };
 
@@ -390,14 +389,14 @@ impl Action for ZoneAction {
                 let request_data = if json_input {
                     match decode_json::<RecordRequest>(&mut request) {
                         Ok(x) => x,
-                        Err(e) => return server.error_response(request, e.description()),
+                        Err(e) => return server.error_response(request, &e.to_string()),
                     }
                 } else {
                     match parse_formdata(&mut request.as_reader())
                         .and_then(RecordRequest::from_formdata)
                     {
                         Ok(x) => x,
-                        Err(e) => return server.error_response(request, e.description()),
+                        Err(e) => return server.error_response(request, &e.to_string()),
                     }
                 };
 

@@ -1,8 +1,17 @@
 //! buffers for use when writing and reading dns packets
 
 use std::collections::BTreeMap;
-use std::io::{Error, ErrorKind};
-use std::io::{Read, Result};
+use std::io::Read;
+
+use derive_more::{Display, From, Error};
+
+#[derive(Debug, Display, From, Error)]
+pub enum BufferError {
+    Io(std::io::Error),
+    EndOfBuffer,
+}
+
+type Result<T> = std::result::Result<T, BufferError>;
 
 pub trait PacketBuffer {
     fn read(&mut self) -> Result<u8>;
@@ -332,7 +341,7 @@ impl PacketBuffer for BytePacketBuffer {
 
     fn read(&mut self) -> Result<u8> {
         if self.pos >= 512 {
-            return Err(Error::new(ErrorKind::InvalidInput, "End of buffer"));
+            return Err(BufferError::EndOfBuffer);
         }
         let res = self.buf[self.pos];
         self.pos += 1;
@@ -342,21 +351,21 @@ impl PacketBuffer for BytePacketBuffer {
 
     fn get(&mut self, pos: usize) -> Result<u8> {
         if pos >= 512 {
-            return Err(Error::new(ErrorKind::InvalidInput, "End of buffer"));
+            return Err(BufferError::EndOfBuffer);
         }
         Ok(self.buf[pos])
     }
 
     fn get_range(&mut self, start: usize, len: usize) -> Result<&[u8]> {
         if start + len >= 512 {
-            return Err(Error::new(ErrorKind::InvalidInput, "End of buffer"));
+            return Err(BufferError::EndOfBuffer);
         }
         Ok(&self.buf[start..start + len as usize])
     }
 
     fn write(&mut self, val: u8) -> Result<()> {
         if self.pos >= 512 {
-            return Err(Error::new(ErrorKind::InvalidInput, "End of buffer"));
+            return Err(BufferError::EndOfBuffer);
         }
         self.buf[self.pos] = val;
         self.pos += 1;

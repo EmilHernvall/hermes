@@ -2,12 +2,24 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::File;
-use std::io::{Error, ErrorKind, Result, Write};
+use std::io::Write;
 use std::path::Path;
 use std::sync::{LockResult, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
+use derive_more::{Display, From, Error};
+
 use crate::dns::buffer::{PacketBuffer, StreamPacketBuffer, VectorPacketBuffer};
 use crate::dns::protocol::{DnsPacket, DnsRecord, QueryType, ResultCode, TransientTtl};
+
+#[derive(Debug, Display, From, Error)]
+pub enum AuthorityError {
+    Buffer(crate::dns::buffer::BufferError),
+    Protocol(crate::dns::protocol::ProtocolError),
+    Io(std::io::Error),
+    PoisonedLock,
+}
+
+type Result<T> = std::result::Result<T, AuthorityError>;
 
 #[derive(Clone, Debug, Default)]
 pub struct Zone {
@@ -162,11 +174,10 @@ impl Authority {
     }
 
     pub fn load(&self) -> Result<()> {
-        let mut zones = match self.zones.write() {
-            Ok(x) => x,
-            Err(_) => return Err(Error::new(ErrorKind::Other, "Failed to acquire lock")),
-        };
-
+        let mut zones = self
+            .zones
+            .write()
+            .map_err(|_| AuthorityError::PoisonedLock)?;
         zones.load()?;
 
         Ok(())
