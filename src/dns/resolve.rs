@@ -4,7 +4,7 @@
 use std::sync::Arc;
 use std::vec::Vec;
 
-use derive_more::{Display, From, Error};
+use derive_more::{Display, Error, From};
 
 use crate::dns::context::ServerContext;
 use crate::dns::protocol::{DnsPacket, QueryType, ResultCode};

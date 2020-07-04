@@ -41,8 +41,7 @@ fieldset {
             <td>{{record.addr}}</td>
             {{/if}}
             <td>
-                <form method="POST" action="/authority/{{../zone}}">
-                    <input type="hidden" name="delete_record" value="true" />
+                <form method="POST" action="/authority/{{../zone}}/delete_record">
                     <input type="hidden" name="domain" value="{{record.domain}}" />
                     <input type="hidden" name="recordtype" value="{{record.type}}" />
                     <input type="hidden" name="ttl" value="{{record.ttl}}" />
@@ -50,7 +49,7 @@ fieldset {
                     <input type="hidden" name="host" value="{{record.host}}" />
                     {{/if}}
                     {{#if record.addr}}
-                    <input type="hidden" name="addr" value="{{record.addr}}" />
+                    <input type="hidden" name="host" value="{{record.addr}}" />
                     {{/if}}
 
                     <button type="submit">Delete</button>

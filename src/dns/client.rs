@@ -10,7 +10,7 @@ use std::thread::{sleep, Builder};
 use std::time::Duration as SleepDuration;
 
 use chrono::*;
-use derive_more::{Display, From, Error};
+use derive_more::{Display, Error, From};
 
 use crate::dns::buffer::{BytePacketBuffer, PacketBuffer, StreamPacketBuffer};
 use crate::dns::netutil::{read_packet_length, write_packet_length};

@@ -6,9 +6,9 @@ use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::net::{Ipv4Addr, Ipv6Addr};
 
-use derive_more::{Display, From, Error};
+use derive_more::{Display, Error, From};
 use rand::random;
-use serde_derive::{Serialize, Deserialize};
+use serde_derive::{Deserialize, Serialize};
 
 use crate::dns::buffer::{PacketBuffer, VectorPacketBuffer};
 

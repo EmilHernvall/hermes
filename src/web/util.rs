@@ -1,4 +1,6 @@
-use std::io::{Read, Result};
+use std::io::Read;
+
+use crate::web::Result;
 
 pub trait FormDataDecodable<T> {
     fn from_formdata(fields: Vec<(String, String)>) -> Result<T>;

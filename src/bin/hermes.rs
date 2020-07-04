@@ -9,9 +9,6 @@ use getopts::Options;
 use hermes::dns::context::{ResolveStrategy, ServerContext};
 use hermes::dns::protocol::{DnsRecord, TransientTtl};
 use hermes::dns::server::{DnsServer, DnsTcpServer, DnsUdpServer};
-use hermes::web::authority::{AuthorityAction, ZoneAction};
-use hermes::web::cache::CacheAction;
-use hermes::web::index::IndexAction;
 use hermes::web::server::WebServer;
 
 fn print_usage(program: &str, opts: Options) {
@@ -120,13 +117,7 @@ fn main() {
 
     // Start web server
     if context.enable_api {
-        let mut webserver = WebServer::new(context.clone());
-
-        webserver.register_action(Box::new(CacheAction::new(context.clone())));
-        webserver.register_action(Box::new(AuthorityAction::new(context.clone())));
-        webserver.register_action(Box::new(ZoneAction::new(context.clone())));
-        webserver.register_action(Box::new(IndexAction::new(context.clone())));
-
+        let webserver = WebServer::new(context.clone());
         webserver.run_webserver();
     }
 }

@@ -3,7 +3,7 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use derive_more::{Display, From, Error};
+use derive_more::{Display, Error, From};
 
 use crate::dns::authority::Authority;
 use crate::dns::cache::SynchronizedCache;

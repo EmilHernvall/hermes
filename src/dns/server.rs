@@ -9,7 +9,7 @@ use std::sync::mpsc::{channel, Sender};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::Builder;
 
-use derive_more::{Display, From, Error};
+use derive_more::{Display, Error, From};
 use rand::random;
 
 use crate::dns::buffer::{BytePacketBuffer, PacketBuffer, StreamPacketBuffer, VectorPacketBuffer};
@@ -582,7 +582,10 @@ mod tests {
 
         // Now construct a context where the dns client will return a failure
         let mut context2 = create_test_context(Box::new(|_, _, _, _| {
-            Err(crate::dns::client::ClientError::Io(std::io::Error::new(std::io::ErrorKind::NotFound, "Fail")))
+            Err(crate::dns::client::ClientError::Io(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "Fail",
+            )))
         }));
 
         match Arc::get_mut(&mut context2) {

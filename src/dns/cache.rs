@@ -6,8 +6,8 @@ use std::hash::{Hash, Hasher};
 use std::sync::{Arc, RwLock};
 
 use chrono::*;
-use derive_more::{Display, From, Error};
-use serde_derive::{Serialize, Deserialize};
+use derive_more::{Display, Error, From};
+use serde_derive::{Deserialize, Serialize};
 
 use crate::dns::protocol::{DnsPacket, DnsRecord, QueryType, ResultCode};
 
