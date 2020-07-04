@@ -1,5 +1,5 @@
-{{#partial "title"}}Zone: {{zone}}{{/partial}}
-{{#partial "header"}}
+{{#*inline "title"}}Zone: {{zone}}{{/inline}}
+{{#*inline "header"}}
 <style type="text/css">
 table.record_table {
     width: 100%;
@@ -16,8 +16,8 @@ fieldset {
     margin-bottom: 20px;
 }
 </style>
-{{/partial}}
-{{#partial "content"}}
+{{/inline}}
+{{#*inline "content"}}
 <fieldset>
     <legend>Current Records</legend>
 
@@ -31,20 +31,26 @@ fieldset {
         {{#each records}}
         <tr>
             <td>{{id}}</td>
-            <td>{{domain}}</td>
-            <td>{{type}}</td>
-            <td>{{ttl}}</td>
-            {{#if host}}
-            <td>{{host}}</td>
+            <td>{{record.domain}}</td>
+            <td>{{record.type}}</td>
+            <td>{{record.ttl}}</td>
+            {{#if record.host}}
+            <td>{{record.host}}</td>
+            {{/if}}
+            {{#if record.addr}}
+            <td>{{record.addr}}</td>
             {{/if}}
             <td>
-                <form method="POST" action="/authority/{{../../zone}}">
+                <form method="POST" action="/authority/{{../zone}}">
                     <input type="hidden" name="delete_record" value="true" />
-                    <input type="hidden" name="domain" value="{{domain}}" />
-                    <input type="hidden" name="recordtype" value="{{type}}" />
-                    <input type="hidden" name="ttl" value="{{ttl}}" />
-                    {{#if host}}
-                    <input type="hidden" name="host" value="{{host}}" />
+                    <input type="hidden" name="domain" value="{{record.domain}}" />
+                    <input type="hidden" name="recordtype" value="{{record.type}}" />
+                    <input type="hidden" name="ttl" value="{{record.ttl}}" />
+                    {{#if record.host}}
+                    <input type="hidden" name="host" value="{{record.host}}" />
+                    {{/if}}
+                    {{#if record.addr}}
+                    <input type="hidden" name="addr" value="{{record.addr}}" />
                     {{/if}}
 
                     <button type="submit">Delete</button>
@@ -100,5 +106,5 @@ fieldset {
     </form>
 
 </fieldset>
-{{/partial}}
-{{> layout}}
+{{/inline}}
+{{~> layout~}}

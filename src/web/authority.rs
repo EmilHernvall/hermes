@@ -5,17 +5,19 @@ use std::sync::Arc;
 
 use ascii::AsciiString;
 use regex::{Captures, Regex};
-use rustc_serialize::json::{self, Json, ToJson};
 use tiny_http::{Header, HeaderField, Method, Request, Response, StatusCode};
+use serde_derive::{Serialize, Deserialize};
+use serde_json::json;
 
 use crate::dns::authority::Zone;
 use crate::dns::context::ServerContext;
 use crate::dns::protocol::{DnsRecord, TransientTtl};
 
 use crate::web::server::{Action, WebServer};
-use crate::web::util::{decode_json, parse_formdata, rr_to_json, FormDataDecodable};
+use crate::web::cache::CacheRecordEntry;
+use crate::web::util::{parse_formdata, FormDataDecodable};
 
-#[derive(Debug, RustcDecodable)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ZoneCreateRequest {
     pub domain: String,
     pub m_name: String,
@@ -62,28 +64,26 @@ impl FormDataDecodable<ZoneCreateRequest> for ZoneCreateRequest {
     }
 }
 
-#[derive(Debug, RustcDecodable)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct RecordRequest {
     pub delete_record: Option<bool>,
     pub recordtype: String,
     pub domain: String,
     pub ttl: u32,
     pub host: Option<String>,
+    pub addr: Option<String>,
 }
 
 impl FormDataDecodable<RecordRequest> for RecordRequest {
     fn from_formdata(fields: Vec<(String, String)>) -> Result<RecordRequest> {
-        let mut d = BTreeMap::new();
-        for (k, v) in fields {
-            d.insert(k, v);
-        }
+        let mut d : BTreeMap<_, _> = fields.into_iter().collect();
 
-        let recordtype = match d.get("recordtype") {
+        let recordtype = match d.remove("recordtype") {
             Some(x) => x,
             None => return Err(Error::new(ErrorKind::InvalidInput, "missing recordtype")),
         };
 
-        let domain = match d.get("domain") {
+        let domain = match d.remove("domain") {
             Some(x) => x,
             None => return Err(Error::new(ErrorKind::InvalidInput, "missing domain")),
         };
@@ -97,10 +97,11 @@ impl FormDataDecodable<RecordRequest> for RecordRequest {
 
         Ok(RecordRequest {
             delete_record: delete_record,
-            recordtype: recordtype.clone(),
-            domain: domain.clone(),
+            recordtype,
+            domain,
             ttl: ttl,
-            host: d.get("host").cloned(),
+            host: d.remove("host"),
+            addr: d.remove("addr"),
         })
     }
 }
@@ -109,7 +110,7 @@ impl RecordRequest {
     fn into_resourcerecord(self) -> Option<DnsRecord> {
         match self.recordtype.as_str() {
             "A" => {
-                let host = match self.host.and_then(|x| x.parse::<Ipv4Addr>().ok()) {
+                let host = match self.addr.and_then(|x| x.parse::<Ipv4Addr>().ok()) {
                     Some(x) => x,
                     None => return None,
                 };
@@ -121,7 +122,7 @@ impl RecordRequest {
                 })
             }
             "AAAA" => {
-                let host = match self.host.and_then(|x| x.parse::<Ipv6Addr>().ok()) {
+                let host = match self.addr.and_then(|x| x.parse::<Ipv6Addr>().ok()) {
                     Some(x) => x,
                     None => return None,
                 };
@@ -193,27 +194,25 @@ impl Action for AuthorityAction {
 
                 let mut zones_json = Vec::new();
                 for zone in &zones.zones() {
-                    let mut d = BTreeMap::new();
-                    d.insert("domain".to_string(), zone.domain.to_json());
-                    d.insert("m_name".to_string(), zone.m_name.to_json());
-                    d.insert("r_name".to_string(), zone.r_name.to_json());
-                    d.insert("serial".to_string(), zone.serial.to_json());
-                    d.insert("refresh".to_string(), zone.refresh.to_json());
-                    d.insert("retry".to_string(), zone.retry.to_json());
-                    d.insert("expire".to_string(), zone.expire.to_json());
-                    d.insert("minimum".to_string(), zone.minimum.to_json());
-                    zones_json.push(Json::Object(d));
+                    zones_json.push(json!({
+                        "domain": zone.domain,
+                        "m_name": zone.m_name,
+                        "r_name": zone.r_name,
+                        "serial": zone.serial,
+                        "refresh": zone.refresh,
+                        "retry": zone.retry,
+                        "expire": zone.expire,
+                        "minimum": zone.minimum,
+                    }));
                 }
 
-                let zones_arr = Json::Array(zones_json);
-
-                let mut result_dict = BTreeMap::new();
-                result_dict.insert("ok".to_string(), true.to_json());
-                result_dict.insert("zones".to_string(), zones_arr);
-                let result_obj = Json::Object(result_dict);
+                let result_obj = json!({
+                    "ok": true,
+                    "zones": zones_json,
+                });
 
                 if json_output {
-                    let output = match json::encode(&result_obj).ok() {
+                    let output = match serde_json::to_string(&result_obj).ok() {
                         Some(x) => x,
                         None => return server.error_response(request, "Failed to parse request"),
                     };
@@ -245,7 +244,7 @@ impl Action for AuthorityAction {
             }
             Method::Post => {
                 let request_data = if json_input {
-                    match decode_json::<ZoneCreateRequest>(&mut request).ok() {
+                    match serde_json::from_reader::<_, ZoneCreateRequest>(request.as_reader()).ok() {
                         Some(x) => x,
                         None => return server.error_response(request, "Failed to parse request"),
                     }
@@ -348,19 +347,22 @@ impl Action for ZoneAction {
 
                 let mut records = Vec::new();
                 for (id, rr) in zone.records.iter().enumerate() {
-                    records.push(rr_to_json(id as u32, rr));
+                    records.push(CacheRecordEntry {
+                        id: id as u32,
+                        record: rr.clone(),
+                    });
                 }
 
-                let records_arr = Json::Array(records);
+                let result_obj = json!({
+                    "ok": true,
+                    "zone": zone.domain,
+                    "records": records,
+                });
 
-                let mut result_dict = BTreeMap::new();
-                result_dict.insert("ok".to_string(), true.to_json());
-                result_dict.insert("zone".to_string(), zone.domain.to_json());
-                result_dict.insert("records".to_string(), records_arr);
-                let result_obj = Json::Object(result_dict);
+                eprintln!("result {:#?}", result_obj);
 
                 if json_output {
-                    let output = match json::encode(&result_obj).ok() {
+                    let output = match serde_json::to_string(&result_obj).ok() {
                         Some(x) => x,
                         None => return server.error_response(request, "Failed to parse request"),
                     };
@@ -387,7 +389,7 @@ impl Action for ZoneAction {
             }
             Method::Post | Method::Delete => {
                 let request_data = if json_input {
-                    match decode_json::<RecordRequest>(&mut request) {
+                    match serde_json::from_reader::<_, RecordRequest>(request.as_reader()) {
                         Ok(x) => x,
                         Err(e) => return server.error_response(request, &e.to_string()),
                     }
@@ -399,6 +401,8 @@ impl Action for ZoneAction {
                         Err(e) => return server.error_response(request, &e.to_string()),
                     }
                 };
+
+                eprintln!("incoming request data: {:?}", request_data);
 
                 let delete_record = if request.method() == &Method::Delete {
                     true

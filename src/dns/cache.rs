@@ -7,6 +7,7 @@ use std::sync::{Arc, RwLock};
 
 use chrono::*;
 use derive_more::{Display, From, Error};
+use serde_derive::{Serialize, Deserialize};
 
 use crate::dns::protocol::{DnsPacket, DnsRecord, QueryType, ResultCode};
 
@@ -24,7 +25,7 @@ pub enum CacheState {
     NotCached,
 }
 
-#[derive(Clone, Eq, Debug)]
+#[derive(Clone, Eq, Debug, Serialize, Deserialize)]
 pub struct RecordEntry {
     pub record: DnsRecord,
     pub timestamp: DateTime<Local>,
@@ -45,7 +46,7 @@ impl Hash for RecordEntry {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum RecordSet {
     NoRecords {
         qtype: QueryType,

@@ -1,5 +1,5 @@
-{{#partial "title"}}Authority{{/partial}}
-{{#partial "header"}}
+{{#*inline "title"}}Authority{{/inline}}
+{{#*inline "header"}}
 <style type="text/css">
 table.zone_table {
     width: 100%;
@@ -16,8 +16,8 @@ fieldset {
     margin-bottom: 20px;
 }
 </style>
-{{/partial}}
-{{#partial "content"}}
+{{/inline}}
+{{#*inline "content"}}
 <fieldset>
     <legend>Current Zones</legend>
 
@@ -107,5 +107,5 @@ fieldset {
 
     </form>
 </fieldset>
-{{/partial}}
-{{> layout}}
+{{/inline}}
+{{~> layout~}}

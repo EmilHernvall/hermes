@@ -1,46 +1,21 @@
-use std::collections::BTreeMap;
 use std::io::Result;
 use std::sync::Arc;
 
 use regex::{Captures, Regex};
-use rustc_serialize::json::{self, Json, ToJson};
 use tiny_http::{Header, Request, Response};
+use serde_derive::{Serialize, Deserialize};
 
 use crate::dns::context::ServerContext;
 
 use crate::web::server::{Action, WebServer};
 
-#[derive(RustcEncodable)]
+#[derive(Serialize, Deserialize)]
 pub struct IndexResponse {
     ok: bool,
     client_sent_queries: usize,
     client_failed_queries: usize,
     server_tcp_queries: usize,
     server_udp_queries: usize,
-}
-
-impl ToJson for IndexResponse {
-    fn to_json(&self) -> Json {
-        let mut d = BTreeMap::new();
-        d.insert("ok".to_string(), self.ok.to_json());
-        d.insert(
-            "client_sent_queries".to_string(),
-            self.client_sent_queries.to_json(),
-        );
-        d.insert(
-            "client_failed_queries".to_string(),
-            self.client_failed_queries.to_json(),
-        );
-        d.insert(
-            "server_tcp_queries".to_string(),
-            self.server_tcp_queries.to_json(),
-        );
-        d.insert(
-            "server_udp_queries".to_string(),
-            self.server_udp_queries.to_json(),
-        );
-        Json::Object(d)
-    }
 }
 
 pub struct IndexAction {
@@ -83,7 +58,7 @@ impl Action for IndexAction {
         };
 
         if json_output {
-            let output = match json::encode(&index_response).ok() {
+            let output = match serde_json::to_string(&index_response).ok() {
                 Some(x) => x,
                 None => return server.error_response(request, "Failed to encode response"),
             };

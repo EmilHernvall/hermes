@@ -20,14 +20,14 @@ pub trait Action {
     ) -> Result<()>;
 }
 
-pub struct WebServer {
+pub struct WebServer<'a> {
     pub context: Arc<ServerContext>,
-    pub handlebars: Handlebars,
+    pub handlebars: Handlebars<'a>,
     pub actions: Vec<Box<dyn Action>>,
 }
 
-impl WebServer {
-    pub fn new(context: Arc<ServerContext>) -> WebServer {
+impl<'a> WebServer<'a> {
+    pub fn new(context: Arc<ServerContext>) -> WebServer<'a> {
         let mut server = WebServer {
             context: context,
             handlebars: Handlebars::new(),
@@ -93,25 +93,27 @@ impl WebServer {
                 None => false,
             };
 
-            let matching_actions: Vec<&Box<dyn Action>> = self
+            let matching_action = self
                 .actions
                 .iter()
-                .filter(|x| x.get_regex().is_match(&request.url()))
-                .collect();
+                .find(|x| x.get_regex().is_match(&request.url()));
 
-            if matching_actions.is_empty() {
-                let response = Response::empty(StatusCode(404));
-                let _ = request.respond(response);
-            } else {
-                let action = &matching_actions[0];
-                if let Some(caps) = action.get_regex().captures(&request.url().to_string()) {
-                    let _ = action.handle(&self, request, &caps, json_input, json_output);
+            match matching_action {
+                None => {
+                    let response = Response::empty(StatusCode(404));
+                    let _ = request.respond(response);
+                },
+                Some(action) => {
+                    if let Some(caps) = action.get_regex().captures(&request.url().to_string()) {
+                        let _ = action.handle(&self, request, &caps, json_input, json_output);
+                    }
                 }
             }
         }
     }
 
     pub fn error_response(&self, request: Request, error: &str) -> Result<()> {
+        eprintln!("Error: {}", error);
         let response = Response::empty(StatusCode(400));
         let _ = request.respond(response);
         Err(Error::new(ErrorKind::InvalidInput, error))

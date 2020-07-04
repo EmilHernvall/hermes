@@ -415,7 +415,6 @@ impl DnsServer for DnsTcpServer {
 #[cfg(test)]
 mod tests {
 
-    use std::io::{Error, ErrorKind};
     use std::net::Ipv4Addr;
     use std::sync::Arc;
 
@@ -583,7 +582,7 @@ mod tests {
 
         // Now construct a context where the dns client will return a failure
         let mut context2 = create_test_context(Box::new(|_, _, _, _| {
-            Err(Error::new(ErrorKind::NotFound, "Fail"))
+            Err(crate::dns::client::ClientError::Io(std::io::Error::new(std::io::ErrorKind::NotFound, "Fail")))
         }));
 
         match Arc::get_mut(&mut context2) {

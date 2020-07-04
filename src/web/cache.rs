@@ -1,50 +1,34 @@
-use std::collections::BTreeMap;
 use std::io::Result;
 use std::sync::Arc;
 
 use regex::{Captures, Regex};
 use tiny_http::{Header, Request, Response};
-//use chrono::*;
-use rustc_serialize::json::{self, Json, ToJson};
+use serde_derive::{Serialize, Deserialize};
 
+use crate::dns::protocol::DnsRecord;
 use crate::dns::cache::RecordSet;
 use crate::dns::context::ServerContext;
 
 use crate::web::server::{Action, WebServer};
-use crate::web::util::rr_to_json;
 
-#[derive(RustcEncodable)]
+#[derive(Serialize, Deserialize)]
+pub struct CacheRecordEntry {
+    pub id: u32,
+    pub record: DnsRecord,
+}
+
+#[derive(Serialize, Deserialize)]
 pub struct CacheRecord {
     domain: String,
     hits: u32,
     updates: u32,
-    entries: Vec<Json>,
+    entries: Vec<CacheRecordEntry>,
 }
 
-impl ToJson for CacheRecord {
-    fn to_json(&self) -> Json {
-        let mut d = BTreeMap::new();
-        d.insert("domain".to_string(), self.domain.to_json());
-        d.insert("hits".to_string(), self.hits.to_json());
-        d.insert("updates".to_string(), self.updates.to_json());
-        d.insert("entries".to_string(), self.entries.to_json());
-        Json::Object(d)
-    }
-}
-
-#[derive(RustcEncodable)]
+#[derive(Serialize, Deserialize)]
 pub struct CacheResponse {
     ok: bool,
     records: Vec<CacheRecord>,
-}
-
-impl ToJson for CacheResponse {
-    fn to_json(&self) -> Json {
-        let mut d = BTreeMap::new();
-        d.insert("ok".to_string(), self.ok.to_json());
-        d.insert("records".to_string(), self.records.to_json());
-        Json::Object(d)
-    }
 }
 
 pub struct CacheAction {
@@ -82,6 +66,7 @@ impl Action for CacheAction {
         _: bool,
         json_output: bool,
     ) -> Result<()> {
+        println!("Handling cache action");
         //let start_of_eq = Local::now();
 
         let cached_records = match self.context.cache.list() {
@@ -110,7 +95,10 @@ impl Action for CacheAction {
                     RecordSet::NoRecords { .. } => {}
                     RecordSet::Records { ref records, .. } => {
                         for entry in records {
-                            cache_record.entries.push(rr_to_json(id, &entry.record));
+                            cache_record.entries.push(CacheRecordEntry {
+                                id,
+                                record: entry.record.clone(),
+                            });
                             id += 1;
                         }
                     }
@@ -123,9 +111,9 @@ impl Action for CacheAction {
         //let end_of_object = Local::now();
 
         if json_output {
-            let output = match json::encode(&cache_response).ok() {
-                Some(x) => x,
-                None => return server.error_response(request, "Failed to encode response"),
+            let output = match serde_json::to_string(&cache_response) {
+                Ok(x) => x,
+                Err(e) => return server.error_response(request, &e.to_string()),
             };
 
             //let end_of_output = Local::now();
@@ -140,9 +128,9 @@ impl Action for CacheAction {
             });
             request.respond(response)
         } else {
-            let html_data = match server.handlebars.render("cache", &cache_response).ok() {
-                Some(x) => x,
-                None => return server.error_response(request, "Failed to encode response"),
+            let html_data = match server.handlebars.render("cache", &cache_response) {
+                Ok(x) => x,
+                Err(e) => return server.error_response(request, &e.to_string()),
             };
 
             //let end_of_output = Local::now();

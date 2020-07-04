@@ -8,6 +8,7 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 
 use derive_more::{Display, From, Error};
 use rand::random;
+use serde_derive::{Serialize, Deserialize};
 
 use crate::dns::buffer::{PacketBuffer, VectorPacketBuffer};
 
@@ -25,7 +26,7 @@ type Result<T> = std::result::Result<T, ProtocolError>;
 /// id of an unknown query when compiling the reply. An integer can be converted
 /// to a querytype using the `from_num` function, and back to an integer using
 /// the `to_num` method.
-#[derive(PartialEq, Eq, Debug, Clone, Hash, Copy)]
+#[derive(PartialEq, Eq, Debug, Clone, Hash, Copy, Serialize, Deserialize)]
 pub enum QueryType {
     UNKNOWN(u16),
     A,     // 1
@@ -71,7 +72,7 @@ impl QueryType {
     }
 }
 
-#[derive(Copy, Clone, Debug, Eq, Ord)]
+#[derive(Copy, Clone, Debug, Eq, Ord, Serialize, Deserialize)]
 pub struct TransientTtl(pub u32);
 
 impl PartialEq<TransientTtl> for TransientTtl {
@@ -99,8 +100,8 @@ impl Hash for TransientTtl {
 ///
 /// This enumeration is used for reading as well as writing records, from network
 /// and from disk (for storage of authority data).
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(tag = "type")]
 pub enum DnsRecord {
     UNKNOWN {
         domain: String,

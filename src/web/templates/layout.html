@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>{{#block "title"}}hermes{{/block}}</title>
+    <title>{{~> title}}</title>
     <style type="text/css">
     html {
         font-family: sans-serif;
@@ -56,7 +56,7 @@
         padding: 20px;
     }
     </style>
-    {{#block "header"}}{{/block}}
+    {{~> header}}
 </head>
 <body>
     <div class="main_wrapper">
@@ -72,8 +72,8 @@
         </header>
 
         <div class="main_content">
-            <h2>{{#block "title"}}hermes{{/block}}</h2>
-            {{#block "content"}}{{/block}}
+            <h2>{{~> title}}</h2>
+            {{~> content}}
         </div>
     </div>
 </body>

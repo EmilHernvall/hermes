@@ -5,12 +5,14 @@ authors = ["emil"]
 edition = "2018"
 
 [dependencies]
-ascii = "0.5.0"
-chrono = "0.2.25"
+ascii = "1.0.0"
+chrono = { version = "0.4.11", features = ["serde"] }
 derive_more = "0.99.8"
 getopts = "0.2.19"
-handlebars = "0.15.0"
+handlebars = "3.1.0"
 rand = "0.3.13"
 regex = "0.1"
-rustc-serialize = "0.3.24"
-tiny_http = "0.5"
+serde = "1.0.114"
+serde_derive = "1.0.114"
+serde_json = "1.0.55"
+tiny_http = "0.7.0"

@@ -318,8 +318,6 @@ impl DnsClient for DnsNetworkClient {
 #[cfg(test)]
 pub mod tests {
 
-    use std::io::Result;
-
     use super::*;
     use crate::dns::protocol::{DnsPacket, DnsRecord, QueryType};
 
