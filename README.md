@@ -34,6 +34,7 @@ This is the result of running `hermes -h`
                             local zones
         -f, --forward SERVER
                             forward replies to specified dns server
+        -p, --port PORT     listen on specified port
 
 API endpoints
 -------------
