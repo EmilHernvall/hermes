@@ -1,5 +1,6 @@
 //! The `ServerContext in this thread holds the common state across the server
 
+use std::fs;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
@@ -51,6 +52,7 @@ pub struct ServerContext {
     pub enable_tcp: bool,
     pub enable_api: bool,
     pub statistics: ServerStatistics,
+    pub zones_dir: &'static str
 }
 
 impl Default for ServerContext {
@@ -76,10 +78,14 @@ impl ServerContext {
                 tcp_query_count: AtomicUsize::new(0),
                 udp_query_count: AtomicUsize::new(0),
             },
+            zones_dir: "zones",
         }
     }
 
     pub fn initialize(&mut self) -> Result<()> {
+        // Create zones directory if it doesn't exist
+        fs::create_dir_all(self.zones_dir)?;
+
         // Start UDP client thread
         self.client.run()?;
 
@@ -128,6 +134,7 @@ pub mod tests {
                 tcp_query_count: AtomicUsize::new(0),
                 udp_query_count: AtomicUsize::new(0),
             },
+            zones_dir: "zones",
         })
     }
 }
