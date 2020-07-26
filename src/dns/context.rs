@@ -134,6 +134,7 @@ pub mod tests {
                 tcp_query_count: AtomicUsize::new(0),
                 udp_query_count: AtomicUsize::new(0),
             },
+            zones_dir: "zones",
         })
     }
 }
